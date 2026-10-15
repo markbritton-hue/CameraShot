@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
 import { IPV4 } from '../../shared/types'
 import type { Camera, PtzCameraState } from '../../shared/types'
 import PtzControls, { LiveView } from './PtzControls'
+import { drive, HoldButton, KEEPALIVE_MS, PAD } from './ptzDrive'
+import type { Held } from './ptzDrive'
 
 interface Props {
   camera: Camera
@@ -17,42 +18,6 @@ interface Props {
   onPatch: (patch: Partial<Camera>) => void
 }
 
-type Held = { action: 'move' | 'zoom'; dir: string }
-
-// While a button is held the page re-sends the command this often; the server stops the camera
-// itself if they stop arriving (see the watchdog in the server), so a closed tab can't leave it moving.
-const KEEPALIVE_MS = 600
-
-async function drive(body: Record<string, unknown>): Promise<{ ok: boolean; error?: string }> {
-  try {
-    const r = await fetch('/api/ptz/drive', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
-    return await r.json()
-  } catch {
-    return { ok: false, error: 'could not reach the CameraShot server' }
-  }
-}
-
-/** A button that acts while it is pressed and releases when the pointer lifts, leaves or is cancelled. */
-function HoldButton({ onDown, onUp, title, className, children }: {
-  onDown: () => void; onUp: () => void; title: string; className?: string; children: ReactNode
-}) {
-  const held = useRef(false)
-  const end = () => { if (held.current) { held.current = false; onUp() } }
-  return (
-    <button className={className} title={title}
-      onPointerDown={(e) => { e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); held.current = true; onDown() }}
-      onPointerUp={end} onPointerCancel={end} onLostPointerCapture={end}
-      onContextMenu={(e) => e.preventDefault()}>
-      {children}
-    </button>
-  )
-}
-
-const PAD: { dir: string; label: string; title: string }[] = [
-  { dir: 'leftup', label: '↖', title: 'Up and left' }, { dir: 'up', label: '↑', title: 'Up' }, { dir: 'rightup', label: '↗', title: 'Up and right' },
-  { dir: 'left', label: '←', title: 'Left' }, { dir: 'stop', label: '■', title: 'Stop' }, { dir: 'right', label: '→', title: 'Right' },
-  { dir: 'leftdown', label: '↙', title: 'Down and left' }, { dir: 'down', label: '↓', title: 'Down' }, { dir: 'rightdown', label: '↘', title: 'Down and right' },
-]
 
 /** Window opened by double-clicking a camera on the stage: live picture, pan/tilt/zoom, and the image controls. */
 export default function CameraView({ camera, serverAvailable, onAir, ptzState, onClose, onOpenSetup, onPatch }: Props) {

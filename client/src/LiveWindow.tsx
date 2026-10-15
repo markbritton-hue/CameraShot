@@ -1,9 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
+import { IPV4 } from '../../shared/types'
 import type { Camera } from '../../shared/types'
 import { LiveFrame } from './PtzControls'
+import PanTiltPad from './PanTiltPad'
 
 interface Props {
   camera: Camera
+  /** this camera is on the ATEM's program output right now */
+  onAir: boolean
   /** the stage area this window floats over, so it can't be dragged out of sight */
   bounds: { w: number; h: number }
   /** stacking order: the window clicked last is on top */
@@ -28,7 +32,10 @@ const write = (id: string, v: Saved[string]) => { try { localStorage.setItem(KEY
  * A small floating live picture of one camera. Starts at 300 x 300; drag the title bar to move it and
  * the bottom-right corner to resize it. Position and size are remembered for each camera.
  */
-export default function LiveWindow({ camera, bounds, z, startAt, onFocus, onClose, onOpenControls }: Props) {
+export default function LiveWindow({ camera, onAir, bounds, z, startAt, onFocus, onClose, onOpenControls }: Props) {
+  const host = (camera.ip ?? '').trim()
+  const canMove = camera.ptz === true && IPV4.test(host) // pan/tilt only for cameras ticked PTZ in Setup
+  const [pad, setPad] = useState(true) // show the small pan/tilt pad over the picture
   const saved = useRef(read()[camera.id])
   const [pos, setPos] = useState({ x: saved.current?.x ?? startAt.x, y: saved.current?.y ?? startAt.y })
   const [size, setSize] = useState({ w: saved.current?.w ?? DEFAULT_SIZE.w, h: saved.current?.h ?? DEFAULT_SIZE.h })
@@ -71,10 +78,16 @@ export default function LiveWindow({ camera, bounds, z, startAt, onFocus, onClos
         onDoubleClick={onOpenControls} title="Drag to move. Double-click for camera controls.">
         <span className="dot" style={{ background: camera.color }} />
         <span className="live-win-name">Cam {camera.number} · {camera.name}</span>
+        {onAir && <span className="live-win-air" title="This camera is live on the ATEM: moving it shows on air">● ON AIR</span>}
+        {canMove && (
+          <button className={pad ? 'active' : ''} onPointerDown={(e) => e.stopPropagation()} onClick={() => setPad(!pad)}
+            title={pad ? 'Hide the pan / tilt pad' : 'Show the pan / tilt pad'} aria-label="Pan and tilt pad">✥</button>
+        )}
         <button onPointerDown={(e) => e.stopPropagation()} onClick={onClose} aria-label="Close live view">×</button>
       </div>
       <div className={`live-win-body${busy ? ' busy' : ''}`}>
         <LiveFrame camNumber={camera.number} rtspPath={camera.rtspPath} fill />
+        {canMove && pad && <PanTiltPad host={host} />}
       </div>
       <div className="live-win-grip" title="Drag to resize"
         onPointerDown={(e) => { e.stopPropagation(); resize.current = { x: e.clientX, y: e.clientY, w: size.w, h: size.h }; setBusy(true) }} />
