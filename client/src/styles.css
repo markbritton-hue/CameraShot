@@ -8,6 +8,7 @@ html, body, #root { height: 100%; margin: 0; background: #0b0e14; color: #d7deec
 .banner .tag { padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 700; color: #0b0e14; }
 .banner .tag + b { margin-right: 18px; }
 .offline-bar { position: absolute; top: 48px; left: 12px; right: 12px; z-index: 2; padding: 8px 12px; border-radius: 6px; background: #7f1d1d; color: #fecaca; font-size: 13px; font-weight: 600; pointer-events: none; }
+.banner .live-off { font-size: 13px; color: #8793a8; background: rgba(16, 21, 30, .7); border: 1px dashed #3a4760; border-radius: 999px; padding: 2px 12px; }
 .conn { margin-left: auto; font-size: 12px; color: #ef4444; }
 .conn.ok { color: #22c55e; }
 .display .banner { font-size: 28px; }

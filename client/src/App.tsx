@@ -258,8 +258,12 @@ export default function App() {
   const selected = show.cameras.find((c) => c.id === selectedId) ?? null
   const selectedItem = show.items.find((i) => i.id === selectedItemId) ?? null
   const targets = useMemo(() => aimTargets(show.items), [show.items])
-  const liveCam = useMemo(() => show.cameras.find((c) => c.atemInput === live.program), [show.cameras, live.program])
-  const prevCam = useMemo(() => show.cameras.find((c) => c.atemInput === live.preview), [show.cameras, live.preview])
+  // The red (live) and green (next) colouring only shows while the ATEM switch is ON. Off means no colouring at all, even
+  // if a real ATEM is connected and reporting a program camera. (The ON AIR warnings below still use the real `live`,
+  // so a camera that really is on air is never moved without a warning.)
+  const liveShown = useMemo<LiveState>(() => (locked ? live : { program: null, preview: null }), [locked, live])
+  const liveCam = useMemo(() => show.cameras.find((c) => c.atemInput === liveShown.program), [show.cameras, liveShown.program])
+  const prevCam = useMemo(() => show.cameras.find((c) => c.atemInput === liveShown.preview), [show.cameras, liveShown.preview])
 
   const simulate = (which: 'program' | 'preview', input: number) => {
     if (STATIC_MODE) return setLive((l) => ({ ...l, [which]: input === 0 ? null : input })) // no server: simulate locally
@@ -271,7 +275,8 @@ export default function App() {
   const simOn = locked // simulator on <=> grid locked
   const toggleSim = (on: boolean) => {
     update((s) => ({ ...s, settings: { ...s.settings, simulator: on } }))
-    if (on) return
+    // switching ON with a real ATEM connected: show what the ATEM says right now, not whatever was cleared when it went off
+    if (on) { if (!STATIC_MODE && atem.state === 'connected') void fetch('/api/atem/refresh', { method: 'POST' }); return }
     // Switching it off clears every ATEM button back to zero: no program and no preview camera, so no highlight is left
     // over from the simulator. (A real ATEM that is connected lights them again at its next cut.)
     void simulate('program', 0)
@@ -282,10 +287,16 @@ export default function App() {
     <div className={`app ${display ? 'display' : ''}`}>
       <div className="canvas" ref={wrapRef}>
         <div className="banner">
-          <span className="tag live" style={{ background: LIVE_COLOR }}>LIVE</span>
-          <b>{live.program === null ? '—' : liveCam ? `Cam ${liveCam.number} · ${liveCam.name}` : `Input ${live.program} (not a camera)`}</b>
-          <span className="tag" style={{ background: PREVIEW_COLOR }}>NEXT</span>
-          <b>{live.preview === null ? '—' : prevCam ? `Cam ${prevCam.number} · ${prevCam.name}` : `Input ${live.preview}`}</b>
+          {locked ? (
+            <>
+              <span className="tag live" style={{ background: LIVE_COLOR }}>LIVE</span>
+              <b>{liveShown.program === null ? '—' : liveCam ? `Cam ${liveCam.number} · ${liveCam.name}` : `Input ${liveShown.program} (not a camera)`}</b>
+              <span className="tag" style={{ background: PREVIEW_COLOR }}>NEXT</span>
+              <b>{liveShown.preview === null ? '—' : prevCam ? `Cam ${prevCam.number} · ${prevCam.name}` : `Input ${liveShown.preview}`}</b>
+            </>
+          ) : (
+            <span className="live-off" title="The ATEM switch in the sidebar is Off, so no live or next colouring is shown.">live / next colouring off</span>
+          )}
           <span className={`conn ${connected ? 'ok' : ''}`}>{STATIC_MODE ? 'planner mode' : connected ? 'connected' : 'offline'}</span>
           {locked && <span className="lock-tag" title="The ATEM simulator is on, so the grid is locked. Switch the simulator off to edit.">🔒 grid locked</span>}
           {display && <button onClick={() => setDisplay(false)}>Exit display (Esc)</button>}
@@ -295,7 +306,7 @@ export default function App() {
             OFFLINE: no live ATEM updates. Your edits are saved in this browser and will sync when the server is back.
           </div>
         )}
-        <StageView show={show} live={live} width={size.w} height={size.h} selectedId={selectedId} selectedItemId={selectedItemId}
+        <StageView show={show} live={liveShown} width={size.w} height={size.h} selectedId={selectedId} selectedItemId={selectedItemId}
           editable={!display && !locked} onSelect={selectCamera} onSelectItem={selectItem} onCameraChange={patchCamera} onCameraOpen={setViewCameraId}
           ptz={ptz} onPresetChip={recallSlot} onLiveIcon={openLiveWin}
           onItemMove={moveItem} onItemResize={resizeItem} onItemRotate={rotateItem} onPointMove={movePoint} />
@@ -469,10 +480,11 @@ export default function App() {
 
           <h2>ATEM simulator
             <button className={`sim-toggle ${simOn ? 'on' : 'off'}`} onClick={() => toggleSim(!simOn)}
-              title={simOn ? 'On: the grid is locked. Click to switch off, clear the ATEM buttons and unlock the grid.' : 'Off: the grid is editable. Click to switch the simulator on.'}>
+              title={simOn ? 'On: live / next colouring is shown and the grid is locked. Click to switch off.' : 'Off: no live / next colouring and the grid is editable. Click to switch on.'}>
               {simOn ? 'On' : 'Off'}
             </button>
           </h2>
+          {!simOn && <p className="hint">Off: no live or next colouring is shown, and the grid can be edited. Switch it On to show the ATEM's live and next cameras (the grid locks).</p>}
           {simOn && (
             <>
               <p className="hint">
