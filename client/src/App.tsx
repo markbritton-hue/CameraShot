@@ -3,6 +3,9 @@ import { aimTargets, defaultShow, normalizeShow } from '../../shared/types'
 import type { AtemStatus, Camera, CameraPreset, LiveState, ServerMessage, Show, StageItem } from '../../shared/types'
 import StageView, { LIVE_COLOR, PREVIEW_COLOR } from './StageView'
 import Setup from './Setup'
+import CloudPanel from './CloudPanel'
+import StartPage from './StartPage'
+import { useCloud } from './cloud'
 
 const CLIENT_ID = crypto.randomUUID()
 const COLORS = ['#38bdf8', '#a78bfa', '#fbbf24', '#f472b6', '#34d399', '#fb923c', '#60a5fa', '#c084fc']
@@ -34,6 +37,8 @@ export default function App() {
   const [connected, setConnected] = useState(false)
   const [atem, setAtem] = useState<AtemStatus>({ state: 'off' })
   const [setupOpen, setSetupOpen] = useState(false)
+  // the start page (sign in, pick or create a show) comes first; the editor stays mounted behind it
+  const [screen, setScreen] = useState<'start' | 'editor'>('start')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
   const [display, setDisplay] = useState(false)
@@ -123,6 +128,30 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
+  const cloud = useCloud(show, (s) => {
+    update(() => s)
+    setSelectedId(null)
+    setSelectedItemId(null)
+  })
+
+  // a new show starts empty but keeps your cameras (inputs, IPs) and ATEM settings, without their presets
+  // A show that is linked to the cloud autosaves there, but a browser-only show would be lost when replaced.
+  const okToReplaceCurrent = () =>
+    cloud.cloudId !== null || show.updatedAt === 0 ||
+    window.confirm('The show open in this browser has not been saved to the cloud. Continuing will replace it. Continue?\n\n(Cancel, then use Continue without signing in > Export or Save to cloud first.)')
+
+  const startNewShow = (name: string) => {
+    if (!okToReplaceCurrent()) return
+    const base: Show = {
+      ...structuredClone(show),
+      name,
+      items: [],
+      cameras: show.cameras.map((c) => ({ ...c, presets: [] })),
+    }
+    void cloud.create(base)
+    setScreen('editor')
+  }
+
   const exportShow = () => {
     const a = document.createElement('a')
     a.href = URL.createObjectURL(new Blob([JSON.stringify(show, null, 2)], { type: 'application/json' }))
@@ -160,11 +189,24 @@ export default function App() {
   const resizeItem = useCallback((id: string, w: number, h: number) =>
     update((s) => ({
       ...s,
-      items: s.items.map((i) => (i.id === id
-        // keep marked points inside the platform when it shrinks
-        ? { ...i, w, h, points: i.points.map((p) => ({ ...p, x: Math.min(p.x, w), y: Math.min(p.y, h) })) }
-        : i)),
+      items: s.items.map((i) => {
+        if (i.id !== id) return i
+        // Items rotate about their centre, so resizing from the corner handle must move the centre to keep the
+        // top-left corner where it is on screen (at any rotation). x/y store the unrotated top-left.
+        const r = (i.rotation * Math.PI) / 180
+        const cos = Math.cos(r), sin = Math.sin(r)
+        const cornerX = i.x + i.w / 2 - (i.w / 2) * cos + (i.h / 2) * sin
+        const cornerY = i.y + i.h / 2 - (i.w / 2) * sin - (i.h / 2) * cos
+        const centreX = cornerX + (w / 2) * cos - (h / 2) * sin
+        const centreY = cornerY + (w / 2) * sin + (h / 2) * cos
+        return {
+          ...i, w, h, x: centreX - w / 2, y: centreY - h / 2,
+          // keep marked points inside the platform when it shrinks
+          points: i.points.map((p) => ({ ...p, x: Math.min(p.x, w), y: Math.min(p.y, h) })),
+        }
+      }),
     })), [update])
+  const rotateItem = useCallback((id: string, rotation: number) => patchItem(id, { rotation }), [patchItem])
   const movePoint = useCallback((itemId: string, pointId: string, x: number, y: number) =>
     update((s) => ({
       ...s,
@@ -234,13 +276,14 @@ export default function App() {
         )}
         <StageView show={show} live={live} width={size.w} height={size.h} selectedId={selectedId} selectedItemId={selectedItemId}
           editable={!display} onSelect={selectCamera} onSelectItem={selectItem} onCameraChange={patchCamera}
-          onItemMove={moveItem} onItemResize={resizeItem} onPointMove={movePoint} />
+          onItemMove={moveItem} onItemResize={resizeItem} onItemRotate={rotateItem} onPointMove={movePoint} />
       </div>
 
       {!display && (
         <aside className="side">
           <div className="title-row">
             <h1>CameraShot</h1>
+            <button onClick={() => setScreen('start')} title="Back to the shows list">Shows</button>
             <button className="gear" title="Setup: ATEM and camera addresses" aria-label="Setup" onClick={() => setSetupOpen(true)}>⚙</button>
           </div>
           <input className="wide" value={show.name} onChange={(e) => update((s) => ({ ...s, name: e.target.value }))} />
@@ -254,6 +297,8 @@ export default function App() {
           </div>
           <input ref={fileRef} type="file" accept="application/json,.json" hidden
             onChange={(e) => { const f = e.target.files?.[0]; if (f) importShow(f); e.target.value = '' }} />
+
+          <CloudPanel cloud={cloud} onShows={() => setScreen('start')} />
 
           <h2>Stage (metres)</h2>
           <div className="row">
@@ -356,6 +401,16 @@ export default function App() {
                   ))}
                 </>
               )}
+              <div className="row rotate-row">
+                <button title="Turn 90° anticlockwise" onClick={() => patchItem(selectedItem.id, { rotation: (((selectedItem.rotation - 90) % 360) + 360) % 360 })}>⟲ 90°</button>
+                <button title="Turn 90° clockwise" onClick={() => patchItem(selectedItem.id, { rotation: (selectedItem.rotation + 90) % 360 })}>⟳ 90°</button>
+                {selectedItem.kind === 'person' && (
+                  <label>Facing°
+                    <input type="number" step={5} value={selectedItem.rotation} onChange={(e) => patchItem(selectedItem.id, { rotation: +e.target.value })} />
+                  </label>
+                )}
+              </div>
+              <p className="hint">Drag the blue dot above the item to rotate it (snaps to 5°).</p>
               <button className="danger" onClick={() => { update((s) => ({ ...s, items: s.items.filter((i) => i.id !== selectedItem.id) })); setSelectedItemId(null) }}>Delete {selectedItem.kind}</button>
             </div>
           )}
@@ -378,6 +433,16 @@ export default function App() {
             ? <p className="hint">Live ATEM and Companion control needs the local CameraShot server (npm run dev).</p>
             : <p className="hint">Companion calls: <code>POST {location.origin}/api/atem/program/&lt;input&gt;?me={show.settings.me}</code></p>}
         </aside>
+      )}
+
+      {screen === 'start' && (
+        <StartPage
+          cloud={cloud}
+          lastOpenedId={cloud.cloudId}
+          onOpen={(c) => { if (c.id !== cloud.cloudId && !okToReplaceCurrent()) return; cloud.open(c); setScreen('editor') }}
+          onNew={startNewShow}
+          onLocal={() => { cloud.unlink(); setScreen('editor') }}
+        />
       )}
 
       {setupOpen && (

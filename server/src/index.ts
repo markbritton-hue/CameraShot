@@ -8,6 +8,10 @@ import { execFile } from 'node:child_process'
 import { defaultShow, IPV4, normalizeShow } from '../../shared/types'
 import type { LiveState, ServerMessage, Show } from '../../shared/types'
 import { createAtemLink } from './atem'
+import { applySetting, readStatus } from './visca'
+import { createVideo } from './video'
+import type { PtzSetting } from '../../shared/types'
+import { DEFAULT_VISCA_PORT } from '../../shared/types'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const root = path.resolve(__dirname, '../..')
@@ -63,6 +67,16 @@ const atemLink = createAtemLink({
 })
 void atemLink.configure(show.settings.atemIp, show.settings.me)
 
+const video = createVideo({
+  exe: path.join(root, 'tools', 'go2rtc', process.platform === 'win32' ? 'go2rtc.exe' : 'go2rtc'),
+  dataDir,
+  port: Number(process.env.GO2RTC_PORT ?? 1984),
+})
+void video.sync(show.cameras)
+// stop go2rtc with the server (a hard kill can't run this; the next start cleans up any leftover)
+process.on('exit', () => video.stop())
+for (const sig of ['SIGINT', 'SIGTERM'] as const) process.on(sig, () => process.exit(0))
+
 const app = Fastify({ logger: { level: 'info' } })
 await app.register(websocket)
 
@@ -70,7 +84,11 @@ await app.register(websocket)
 app.removeContentTypeParser('application/json')
 app.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, done) => {
   if (!body) return done(null, undefined)
-  try { done(null, JSON.parse(body as string)) } catch (e) { done(e as Error) }
+  try {
+    done(null, JSON.parse(body as string))
+  } catch (e) {
+    done(Object.assign(e as Error, { statusCode: 400 })) // bad JSON from a client is a 400, not a server error
+  }
 })
 app.addContentTypeParser('*', (_req, _payload, done) => done(null, undefined))
 
@@ -91,6 +109,7 @@ app.put<{ Body: Show }>('/api/show', async (req, reply) => {
   show = normalizeShow(body)
   saveShow(show)
   void atemLink.configure(show.settings.atemIp, show.settings.me)
+  void video.sync(show.cameras)
   const cid = req.headers['x-client-id']
   broadcast({ type: 'show', show }, typeof cid === 'string' ? cid : undefined)
   return { ok: true }
@@ -98,6 +117,7 @@ app.put<{ Body: Show }>('/api/show', async (req, reply) => {
 
 app.get('/api/live', async () => live)
 app.get('/api/atem/status', async () => atemLink.status())
+app.get('/api/video/status', async () => video.status())
 
 /**
  * Reachability check for the setup page: one ping to a camera or the ATEM.
@@ -152,6 +172,47 @@ for (const which of ['program', 'preview'] as const) {
   app.get(`/api/atem/${which}/:input`, handler as never)
   app.post(`/api/atem/${which}/:input`, handler as never)
 }
+
+/**
+ * PTZ camera image controls (exposure, gain, white balance) over VISCA.
+ * Only cameras whose IP is entered in this show's setup are reachable, so the endpoint can't be
+ * pointed at arbitrary devices on the network.
+ */
+const ptzTarget = (host: string | undefined) => {
+  const cam = show.cameras.find((c) => c.ip && c.ip === host)
+  return cam ? { host: cam.ip as string, port: cam.viscaPort ?? DEFAULT_VISCA_PORT } : null
+}
+const SETTINGS: PtzSetting[] = ['exposureMode', 'gain', 'wbMode', 'redGain', 'blueGain', 'onePush', 'blc', 'expComp', 'expCompLevel', 'saturation', 'hue']
+const NOT_CONFIGURED = 'that IP is not a camera in this show. Enter it in Setup and wait a moment for it to save.'
+
+app.get<{ Querystring: { host?: string } }>('/api/ptz/status', async (req, reply) => {
+  const t = ptzTarget(req.query.host)
+  if (!t) return reply.code(404).send({ ok: false, error: NOT_CONFIGURED })
+  try {
+    return { ok: true, status: await readStatus(t.host, t.port) }
+  } catch (e) {
+    return reply.code(502).send({ ok: false, error: e instanceof Error ? e.message : String(e) })
+  }
+})
+
+app.post<{ Body: { host?: string; setting?: PtzSetting; value?: number } }>('/api/ptz/control', async (req, reply) => {
+  const { host, setting, value } = req.body ?? {}
+  const t = ptzTarget(host)
+  if (!t) return reply.code(404).send({ ok: false, error: NOT_CONFIGURED })
+  if (!setting || !SETTINGS.includes(setting)) return reply.code(400).send({ ok: false, error: 'unknown setting' })
+  try {
+    await applySetting(t.host, t.port, setting, value)
+  } catch (e) {
+    const bad = e instanceof RangeError
+    return reply.code(bad ? 400 : 502).send({ ok: false, error: e instanceof Error ? e.message : String(e) })
+  }
+  // read it back so the page shows what the camera is really doing
+  try {
+    return { ok: true, status: await readStatus(t.host, t.port) }
+  } catch {
+    return { ok: true }
+  }
+})
 
 /**
  * Recall a camera preset, like a PTZ memory button.

@@ -24,10 +24,11 @@ interface Props {
   onCameraChange: (id: string, patch: Partial<Camera>) => void
   onItemMove: (id: string, x: number, y: number) => void
   onItemResize: (id: string, w: number, h: number) => void
+  onItemRotate: (id: string, rotation: number) => void
   onPointMove: (itemId: string, pointId: string, x: number, y: number) => void
 }
 
-export default function StageView({ show, live, width, height, selectedId, selectedItemId, editable, onSelect, onSelectItem, onCameraChange, onItemMove, onItemResize, onPointMove }: Props) {
+export default function StageView({ show, live, width, height, selectedId, selectedItemId, editable, onSelect, onSelectItem, onCameraChange, onItemMove, onItemResize, onItemRotate, onPointMove }: Props) {
   const clearSelection = () => { onSelect(null); onSelectItem(null) }
   const { stage } = show
   const pad = 24
@@ -36,6 +37,16 @@ export default function StageView({ show, live, width, height, selectedId, selec
   const oy = (height - stage.depth * s) / 2
   const anyLive = live.program !== null || live.preview !== null
   const selectedPlatform = show.items.find((i) => i.id === selectedItemId && i.kind !== 'person') ?? null
+  const selectedPerson = show.items.find((i) => i.id === selectedItemId && i.kind === 'person') ?? null
+  const personR = Math.max(12, 0.3 * s)
+
+  // Angle (snapped to 5°) that points the item's "up" at the mouse, for a handle dragged around centre (cx, cy) in stage units
+  const rotationToPointer = (e: { target: { getStage: () => { getPointerPosition: () => { x: number; y: number } | null } | null } }, cx: number, cy: number) => {
+    const p = e.target.getStage()?.getPointerPosition()
+    if (!p) return null
+    const deg = (Math.atan2(p.y - (oy + cy * s), p.x - (ox + cx * s)) * 180) / Math.PI + 90
+    return (((Math.round(deg / 5) * 5) % 360) + 360) % 360
+  }
 
   const gridLines = []
   for (let x = 0; x <= stage.width; x++) gridLines.push(<Line key={`gx${x}`} points={[x * s, 0, x * s, stage.depth * s]} stroke="#2a3140" strokeWidth={1} listening={false} />)
@@ -59,21 +70,27 @@ export default function StageView({ show, live, width, height, selectedId, selec
           const picked = it.id === selectedItemId
           const dragItem = (e: { target: { x: () => number; y: () => number }; currentTarget: unknown }) => {
             if (e.target !== e.currentTarget) return // ignore bubbled drags from child points
-            onItemMove(it.id, e.target.x() / s, e.target.y() / s)
+            // platforms/stairs sit on a centre pivot, so the group position is the centre; items store the top-left
+            const dx = it.kind === 'person' ? 0 : it.w / 2
+            const dy = it.kind === 'person' ? 0 : it.h / 2
+            onItemMove(it.id, e.target.x() / s - dx, e.target.y() / s - dy)
           }
           if (it.kind === 'person') {
-            const r = Math.max(12, 0.3 * s)
+            const r = personR
             return (
               <Group key={it.id} x={it.x * s} y={it.y * s} draggable={editable} onDragMove={dragItem} onMouseDown={() => { onSelect(null); onSelectItem(it.id) }}>
-                {/* top-down figure: shoulders, then head slightly forward (towards the audience) */}
-                <Ellipse radiusX={r} radiusY={r * 0.55} y={-r * 0.1} fill="#5b7fa8" stroke={picked ? '#fff' : '#1f3550'} strokeWidth={picked ? 3 : 2} />
-                <Circle radius={r * 0.46} y={r * 0.12} fill="#e7c7a0" stroke={picked ? '#fff' : '#8a6a44'} strokeWidth={picked ? 2 : 1.5} listening={false} />
+                {/* top-down figure facing the audience at 0°: shoulders, then head slightly forward. The label never rotates. */}
+                <Group rotation={it.rotation}>
+                  <Ellipse radiusX={r} radiusY={r * 0.55} y={-r * 0.1} fill="#5b7fa8" stroke={picked ? '#fff' : '#1f3550'} strokeWidth={picked ? 3 : 2} />
+                  <Circle radius={r * 0.46} y={r * 0.12} fill="#e7c7a0" stroke={picked ? '#fff' : '#8a6a44'} strokeWidth={picked ? 2 : 1.5} listening={false} />
+                </Group>
                 <Text text={it.label} x={-50} y={r + 4} width={100} align="center" fill="#e6d3b3" fontSize={12} listening={false} />
               </Group>
             )
           }
           return (
-            <Group key={it.id} x={it.x * s} y={it.y * s} rotation={it.rotation} draggable={editable} onDragMove={dragItem}
+            <Group key={it.id} x={(it.x + it.w / 2) * s} y={(it.y + it.h / 2) * s} offsetX={(it.w * s) / 2} offsetY={(it.h * s) / 2}
+              rotation={it.rotation} draggable={editable} onDragMove={dragItem}
               onMouseDown={() => { onSelect(null); onSelectItem(it.id) }}>
               {it.kind === 'stairs' ? (() => {
                 const n = Math.max(2, Math.min(8, it.steps ?? 3))
@@ -150,7 +167,20 @@ export default function StageView({ show, live, width, height, selectedId, selec
       {/* Top layer: the selected platform's points and resize handles sit above everything so they can always be grabbed */}
       {selectedPlatform && (
         <Layer x={ox} y={oy}>
-          <Group x={selectedPlatform.x * s} y={selectedPlatform.y * s} rotation={selectedPlatform.rotation}>
+          <Group x={(selectedPlatform.x + selectedPlatform.w / 2) * s} y={(selectedPlatform.y + selectedPlatform.h / 2) * s}
+            offsetX={(selectedPlatform.w * s) / 2} offsetY={(selectedPlatform.h * s) / 2} rotation={selectedPlatform.rotation}>
+            {editable && (
+              <>
+                {/* rotation handle: drag it around the item; it snaps to 5° steps */}
+                <Line points={[(selectedPlatform.w * s) / 2, 0, (selectedPlatform.w * s) / 2, -26]} stroke="#5b8def" strokeWidth={2} listening={false} />
+                <Circle x={(selectedPlatform.w * s) / 2} y={-26} radius={8} fill="#5b8def" stroke="#fff" strokeWidth={2} draggable
+                  onDragMove={(e) => {
+                    const deg = rotationToPointer(e, selectedPlatform.x + selectedPlatform.w / 2, selectedPlatform.y + selectedPlatform.h / 2)
+                    e.target.position({ x: (selectedPlatform.w * s) / 2, y: -26 })
+                    if (deg !== null) onItemRotate(selectedPlatform.id, deg)
+                  }} />
+              </>
+            )}
             {selectedPlatform.points.map((p) => (
               <Group key={p.id} x={p.x * s} y={p.y * s} draggable={editable}
                 onDragMove={(e) => onPointMove(selectedPlatform.id, p.id, e.target.x() / s, e.target.y() / s)}>
@@ -172,6 +202,20 @@ export default function StageView({ show, live, width, height, selectedId, selec
                   }} />
               )
             })}
+          </Group>
+        </Layer>
+      )}
+
+      {selectedPerson && editable && (
+        <Layer x={ox} y={oy}>
+          <Group x={selectedPerson.x * s} y={selectedPerson.y * s} rotation={selectedPerson.rotation}>
+            <Line points={[0, -personR, 0, -personR - 22]} stroke="#5b8def" strokeWidth={2} listening={false} />
+            <Circle y={-personR - 22} radius={8} fill="#5b8def" stroke="#fff" strokeWidth={2} draggable
+              onDragMove={(e) => {
+                const deg = rotationToPointer(e, selectedPerson.x, selectedPerson.y)
+                e.target.position({ x: 0, y: -personR - 22 })
+                if (deg !== null) onItemRotate(selectedPerson.id, deg)
+              }} />
           </Group>
         </Layer>
       )}

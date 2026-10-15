@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { IPV4 } from '../../shared/types'
 import type { AtemStatus, Camera, Show } from '../../shared/types'
+import PtzControls from './PtzControls'
 
 interface Props {
   show: Show
@@ -42,6 +43,7 @@ export default function Setup({ show, atem, serverAvailable, onClose, update }: 
   // IP boxes are drafts: they are applied on Connect / when you leave the box, not on every keystroke
   const [atemDraft, setAtemDraft] = useState(show.settings.atemIp)
   const [pings, setPings] = useState<Record<string, PingResult>>({})
+  const [controlsFor, setControlsFor] = useState<string | null>(null) // camera whose image controls are open
 
   const draftValid = IPV4.test(atemDraft.trim())
   const summary = atemSummary(atem)
@@ -108,10 +110,11 @@ export default function Setup({ show, atem, serverAvailable, onClose, update }: 
           <table className="cam-table">
             <thead><tr><th>Camera</th><th>ATEM input</th><th>IP address</th><th /></tr></thead>
             <tbody>
-              {show.cameras.map((c) => {
+              {show.cameras.flatMap((c) => {
                 const ip = c.ip ?? ''
                 const valid = IPV4.test(ip.trim())
-                return (
+                const open = controlsFor === c.id
+                return [
                   <tr key={c.id}>
                     <td><span className="dot" style={{ background: c.color }} /> {c.number} · {c.name}</td>
                     <td>
@@ -126,10 +129,21 @@ export default function Setup({ show, atem, serverAvailable, onClose, update }: 
                     </td>
                     <td className="ping-cell">
                       <button disabled={!valid || !serverAvailable} onClick={() => runPing(c.id, ip.trim())}>Test</button>
+                      <button disabled={!valid || !serverAvailable} className={open ? 'active' : ''}
+                        title="Exposure, gain and white balance for this PTZ camera"
+                        onClick={() => setControlsFor(open ? null : c.id)}>Controls</button>
                       <PingBadge result={pings[c.id]} />
                     </td>
-                  </tr>
-                )
+                  </tr>,
+                  open && (
+                    <tr key={`${c.id}-ptz`} className="ptz-row">
+                      <td colSpan={4}>
+                        <PtzControls host={ip.trim()} port={c.viscaPort} onPort={(p) => patchCamera(c.id, { viscaPort: p })}
+                          camNumber={c.number} rtspPath={c.rtspPath} onRtspPath={(p) => patchCamera(c.id, { rtspPath: p })} />
+                      </td>
+                    </tr>
+                  ),
+                ]
               })}
             </tbody>
           </table>

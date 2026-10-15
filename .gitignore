@@ -6,6 +6,9 @@ client/dist/
 # runtime show data and backups (your layouts live here)
 data/
 
+# downloaded helper programs (go2rtc for live video, 19 MB); get it from github.com/AlexxIT/go2rtc/releases
+tools/
+
 # secrets
 .env
 .env.local

@@ -15,6 +15,10 @@ export interface Camera {
   atemInput: number
   /** the camera's own IP address on the network (for reachability checks; later PTZ control) */
   ip?: string
+  /** UDP port for VISCA over IP; 1259 for most cameras (AVKANS / PTZOptics style) */
+  viscaPort?: number
+  /** RTSP path for the live view, e.g. "/2" (the lower-resolution stream on most AVKANS cameras) */
+  rtspPath?: string
   /** position on stage, metres */
   x: number
   y: number
@@ -66,6 +70,35 @@ export interface Show {
   }
 }
 
+/** Camera image settings read from / written to a PTZ camera over VISCA. */
+export interface PtzStatus {
+  /** 0 full auto, 3 manual, 10 shutter priority, 11 iris priority, 13 bright */
+  exposureMode: number
+  /** index; adjustable in manual exposure */
+  gain: number
+  /** 0 auto, 1 indoor, 2 outdoor, 3 one-push, 4 ATW, 5 manual (other values exist on some models) */
+  wbMode: number
+  /** 0-255; adjustable in manual white balance */
+  redGain: number
+  blueGain: number
+  iris: number
+  shutter: number
+  /** backlight compensation on */
+  blc: boolean
+  /** exposure compensation on, and its level (0-14, 7 is neutral on most cameras) */
+  expComp: boolean
+  expCompLevel: number
+  /** colour saturation and hue, 0-14 */
+  saturation: number
+  hue: number
+}
+
+export type PtzSetting =
+  | 'exposureMode' | 'gain' | 'wbMode' | 'redGain' | 'blueGain' | 'onePush'
+  | 'blc' | 'expComp' | 'expCompLevel' | 'saturation' | 'hue'
+
+export const DEFAULT_VISCA_PORT = 1259
+
 export interface LiveState {
   program: number | null
   preview: number | null
@@ -98,12 +131,14 @@ export function normalizeShow(s: Show): Show {
   }
 }
 
-/** Stage-space position of a point on a (possibly rotated) platform. */
+/** Stage-space position of a point on a (possibly rotated) platform. Items rotate about their centre. */
 export function itemPointWorld(it: StageItem, p: ItemPoint): { x: number; y: number } {
   const r = (it.rotation * Math.PI) / 180
+  const dx = p.x - it.w / 2
+  const dy = p.y - it.h / 2
   return {
-    x: it.x + p.x * Math.cos(r) - p.y * Math.sin(r),
-    y: it.y + p.x * Math.sin(r) + p.y * Math.cos(r),
+    x: it.x + it.w / 2 + dx * Math.cos(r) - dy * Math.sin(r),
+    y: it.y + it.h / 2 + dx * Math.sin(r) + dy * Math.cos(r),
   }
 }
 
