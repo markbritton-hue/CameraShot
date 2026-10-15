@@ -6,6 +6,9 @@ import StageView, { LIVE_COLOR, PREVIEW_COLOR } from './StageView'
 const CLIENT_ID = crypto.randomUUID()
 const COLORS = ['#38bdf8', '#a78bfa', '#fbbf24', '#f472b6', '#34d399', '#fb923c', '#60a5fa', '#c084fc']
 
+// On GitHub Pages there is no Node server: the app runs as a standalone planner that saves in the browser.
+const STATIC_MODE = location.hostname.endsWith('.github.io')
+
 const LOCAL_KEY = 'camerashot.show.v1'
 function readLocal(): Show {
   try {
@@ -68,6 +71,7 @@ export default function App() {
 
   // websocket with auto-reconnect
   useEffect(() => {
+    if (STATIC_MODE) return
     let ws: WebSocket | null = null
     let timer: number | undefined
     let closed = false
@@ -197,7 +201,10 @@ export default function App() {
   const liveCam = useMemo(() => show.cameras.find((c) => c.atemInput === live.program), [show.cameras, live.program])
   const prevCam = useMemo(() => show.cameras.find((c) => c.atemInput === live.preview), [show.cameras, live.preview])
 
-  const simulate = (which: 'program' | 'preview', input: number) => fetch(`/api/atem/${which}/${input}`, { method: 'POST' })
+  const simulate = (which: 'program' | 'preview', input: number) => {
+    if (STATIC_MODE) return setLive((l) => ({ ...l, [which]: input === 0 ? null : input })) // no server: simulate locally
+    return fetch(`/api/atem/${which}/${input}`, { method: 'POST' })
+  }
 
   return (
     <div className={`app ${display ? 'display' : ''}`}>
@@ -207,10 +214,10 @@ export default function App() {
           <b>{live.program === null ? '—' : liveCam ? `Cam ${liveCam.number} · ${liveCam.name}` : `Input ${live.program} (not a camera)`}</b>
           <span className="tag" style={{ background: PREVIEW_COLOR }}>NEXT</span>
           <b>{live.preview === null ? '—' : prevCam ? `Cam ${prevCam.number} · ${prevCam.name}` : `Input ${live.preview}`}</b>
-          <span className={`conn ${connected ? 'ok' : ''}`}>{connected ? 'connected' : 'offline'}</span>
+          <span className={`conn ${connected ? 'ok' : ''}`}>{STATIC_MODE ? 'planner mode' : connected ? 'connected' : 'offline'}</span>
           {display && <button onClick={() => setDisplay(false)}>Exit display (Esc)</button>}
         </div>
-        {!connected && (
+        {!connected && !STATIC_MODE && (
           <div className="offline-bar">
             OFFLINE: no live ATEM updates. Your edits are saved in this browser and will sync when the server is back.
           </div>
@@ -225,7 +232,7 @@ export default function App() {
           <h1>CameraShot</h1>
           <input className="wide" value={show.name} onChange={(e) => update((s) => ({ ...s, name: e.target.value }))} />
           <p className="hint">
-            Saved in this browser ✓ · {connected ? (synced ? 'synced to server ✓' : 'syncing to server…') : 'server offline, will sync later'}
+            Saved in this browser ✓ · {STATIC_MODE ? 'standalone planner (no server). Use Export to keep a copy.' : connected ? (synced ? 'synced to server ✓' : 'syncing to server…') : 'server offline, will sync later'}
           </p>
           <div className="row">
             <button onClick={exportShow}>Export</button>
@@ -350,7 +357,9 @@ export default function App() {
               <option value={1}>ME1</option><option value={2}>ME2</option>
             </select>
           </label>
-          <p className="hint">Companion calls: <code>POST {location.origin}/api/atem/program/&lt;input&gt;?me={show.settings.me}</code></p>
+          {STATIC_MODE
+            ? <p className="hint">Live ATEM and Companion control needs the local CameraShot server (npm run dev).</p>
+            : <p className="hint">Companion calls: <code>POST {location.origin}/api/atem/program/&lt;input&gt;?me={show.settings.me}</code></p>}
         </aside>
       )}
     </div>
