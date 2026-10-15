@@ -30,6 +30,9 @@ function writeLocal(s: Show) {
   try { localStorage.setItem(LOCAL_KEY, JSON.stringify(s)) } catch { /* storage full or blocked */ }
 }
 
+/** 12 -> 12', 13.12 -> 13.1' */
+const feet = (n: number) => `${+n.toFixed(1)}'`
+
 const near = (a: number, b: number) => Math.abs(a - b) < 0.01
 const presetActive = (c: Camera, p: CameraPreset) =>
   near(c.fov, p.fov) && near(c.focus.x, p.focus.x) && near(c.focus.y, p.focus.y) && near(c.focus.radius, p.focus.radius)
@@ -256,6 +259,15 @@ export default function App() {
     return fetch(`/api/atem/${which}/${input}`, { method: 'POST' })
   }
 
+  // the ATEM simulator buttons can be switched off (remembered in this browser); on a real show you don't want them around
+  const [simOn, setSimOn] = useState<boolean>(() => { try { return localStorage.getItem('camerashot.sim') !== 'off' } catch { return true } })
+  const toggleSim = (on: boolean) => {
+    setSimOn(on)
+    try { localStorage.setItem('camerashot.sim', on ? 'on' : 'off') } catch { /* storage blocked */ }
+    // turning it off also clears any highlight the simulator left behind, unless the real ATEM is what is driving it
+    if (!on && atem.state !== 'connected') { void simulate('program', 0); void simulate('preview', 0) }
+  }
+
   return (
     <div className={`app ${display ? 'display' : ''}`}>
       <div className="canvas" ref={wrapRef}>
@@ -293,6 +305,8 @@ export default function App() {
       {!display && (
         // the panel takes on the selected camera's colour (a tint, so the text stays readable)
         <aside className={`side${selected ? ' has-cam' : ''}`} style={selected ? ({ '--cam': selected.color } as React.CSSProperties) : undefined}>
+          {/* the show-level options (title, shows list, setup, cloud, grid size) only appear when no camera is picked */}
+          {!selected && (<>
           <div className="title-row">
             <h1>CameraShot</h1>
             <button onClick={() => setScreen('start')} title="Back to the shows list">Shows</button>
@@ -314,6 +328,7 @@ export default function App() {
               onChange={(e) => update((s) => ({ ...s, stage: { ...s.stage, grid: Math.max(0.5, +e.target.value || 2) } }))} /></label>
           </div>
           <p className="hint">Each square is {show.stage.grid ?? 2} ft. The brighter lines (every {5 * (show.stage.grid ?? 2)} ft) are numbered from the top-left corner. Enter the real size of your stage.</p>
+          </>)}
 
           <h2>Cameras <button onClick={addCamera}>+ Add</button></h2>
           <ul className="cams">
@@ -379,6 +394,7 @@ export default function App() {
             {show.items.map((it) => (
               <li key={it.id} className={it.id === selectedItemId ? 'sel' : ''} onClick={() => selectItem(it.id)}>
                 <span>{it.kind === 'person' ? '🧍' : it.kind === 'stairs' ? '🪜' : '▭'}</span>{it.label}
+                {it.kind === 'platform' && <small>{feet(it.w)} × {feet(it.h)}</small>}
               </li>
             ))}
           </ul>
@@ -437,20 +453,28 @@ export default function App() {
             </div>
           )}
 
-          <h2>ATEM simulator</h2>
-          <p className="hint">
-            {atem.state === 'connected' ? <>Reading the real ATEM (ME{show.settings.me}); these buttons override it until the next cut.</> : <>For testing without the ATEM.</>}
-            {' '}Set the ATEM address under ⚙.
-          </p>
-          {(['program', 'preview'] as const).map((which) => (
-            <div key={which} className="sim">
-              <small>{which}</small>
-              {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
-                <button key={n} className={live[which] === n ? which : ''} onClick={() => simulate(which, n)}>{n}</button>
+          <h2>ATEM simulator
+            <label className="switch" title="Show or hide the simulator buttons">
+              <input type="checkbox" checked={simOn} onChange={(e) => toggleSim(e.target.checked)} /> {simOn ? 'On' : 'Off'}
+            </label>
+          </h2>
+          {simOn && (
+            <>
+              <p className="hint">
+                {atem.state === 'connected' ? <>Reading the real ATEM (ME{show.settings.me}); these buttons override it until the next cut.</> : <>For testing without the ATEM.</>}
+                {' '}Set the ATEM address under ⚙.
+              </p>
+              {(['program', 'preview'] as const).map((which) => (
+                <div key={which} className="sim">
+                  <small>{which}</small>
+                  {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
+                    <button key={n} className={live[which] === n ? which : ''} onClick={() => simulate(which, n)}>{n}</button>
+                  ))}
+                  <button onClick={() => simulate(which, 0)}>✕</button>
+                </div>
               ))}
-              <button onClick={() => simulate(which, 0)}>✕</button>
-            </div>
-          ))}
+            </>
+          )}
           {STATIC_MODE
             ? <p className="hint">Live ATEM and Companion control needs the local CameraShot server (npm run dev).</p>
             : <p className="hint">Companion calls: <code>POST {location.origin}/api/atem/program/&lt;input&gt;?me={show.settings.me}</code></p>}

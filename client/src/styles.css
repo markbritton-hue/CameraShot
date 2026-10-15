@@ -18,6 +18,8 @@ html, body, #root { height: 100%; margin: 0; background: #0b0e14; color: #d7deec
 .side.has-cam .editor, .side.has-cam .cams li { background: rgba(8, 11, 17, .38); }
 .side.has-cam .cams li.sel { outline-color: var(--cam); }
 .side.has-cam .hint, .side.has-cam h2, .side.has-cam label, .side.has-cam .cams small { color: color-mix(in srgb, #ffffff 78%, var(--cam)); }
+.side .switch { display: inline-flex; flex-direction: row; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; text-transform: none; letter-spacing: 0; cursor: pointer; }
+.side .switch input { width: auto; }
 .side h1 { margin: 0; font-size: 20px; }
 .title-row { display: flex; justify-content: space-between; align-items: center; }
 .gear { font-size: 20px; line-height: 1; padding: 4px 9px; }
