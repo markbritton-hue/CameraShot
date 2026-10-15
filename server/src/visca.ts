@@ -41,6 +41,21 @@ function exchange(host: string, port: number, bytes: number[], kind: 'command' |
   })
 }
 
+/**
+ * Send a command and don't wait for the camera's reply. Used for movement, where each press must feel
+ * instant and the camera acknowledges long after we care. The socket stays open briefly so it isn't torn down mid-send.
+ */
+function fire(host: string, port: number, bytes: number[]): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const sock = dgram.createSocket('udp4')
+    sock.on('error', () => { /* a lost movement packet is covered by the keep-alive and the stop watchdog */ })
+    sock.send(Buffer.from(bytes), port, host, (err) => {
+      setTimeout(() => { try { sock.close() } catch { /* already closed */ } }, 400)
+      err ? reject(err) : resolve()
+    })
+  })
+}
+
 const command = (host: string, port: number, bytes: number[]) => exchange(host, port, bytes, 'command')
 const inquire = (host: string, port: number, bytes: number[]) => exchange(host, port, bytes, 'inquiry')
 
@@ -64,6 +79,52 @@ export async function readStatus(host: string, port: number): Promise<PtzStatus>
   const saturation = parseDirect(await inquire(host, port, [0x81, 0x09, 0x04, 0x49, 0xff]))
   const hue = parseDirect(await inquire(host, port, [0x81, 0x09, 0x04, 0x4f, 0xff]))
   return { exposureMode, wbMode, gain, redGain, blueGain, iris, shutter, blc, expComp, expCompLevel, saturation, hue }
+}
+
+// pan direction byte: 1 left, 2 right, 3 none | tilt direction byte: 1 up, 2 down, 3 none
+const PAN_TILT: Record<string, [number, number]> = {
+  left: [1, 3], right: [2, 3], up: [3, 1], down: [3, 2],
+  leftup: [1, 1], rightup: [2, 1], leftdown: [1, 2], rightdown: [2, 2],
+}
+export const DIRECTIONS = Object.keys(PAN_TILT)
+const clamp = (n: unknown, lo: number, hi: number, dflt: number) => {
+  const v = Number(n)
+  return Number.isFinite(v) ? Math.min(hi, Math.max(lo, Math.round(v))) : dflt
+}
+
+/** Pan / tilt / zoom / home, same bytes GearOps already uses on these cameras. */
+export const drive = {
+  move(host: string, port: number, dir: string, speed: unknown) {
+    const pt = PAN_TILT[dir]
+    if (!pt) throw new RangeError(`direction must be one of ${DIRECTIONS.join(', ')}`)
+    const pan = clamp(speed, 1, 24, 8)
+    const tilt = Math.min(pan, 20) // tilt tops out at 20 (0x14) on these cameras
+    return fire(host, port, [0x81, 0x01, 0x06, 0x01, pan, tilt, pt[0], pt[1], 0xff])
+  },
+  zoom(host: string, port: number, dir: string, speed: unknown) {
+    if (dir !== 'in' && dir !== 'out') throw new RangeError('zoom direction must be in or out')
+    const s = clamp(speed, 1, 7, 3)
+    return fire(host, port, [0x81, 0x01, 0x04, 0x07, (dir === 'in' ? 0x20 : 0x30) | s, 0xff])
+  },
+  /** stops pan/tilt and zoom; sent twice because UDP can drop a packet and a stuck camera is the worst failure */
+  async stop(host: string, port: number) {
+    const stopAll = async () => {
+      await fire(host, port, [0x81, 0x01, 0x06, 0x01, 0x10, 0x10, 0x03, 0x03, 0xff])
+      await fire(host, port, [0x81, 0x01, 0x04, 0x07, 0x00, 0xff])
+    }
+    await stopAll()
+    setTimeout(() => void stopAll().catch(() => {}), 120)
+  },
+  home: (host: string, port: number) => fire(host, port, [0x81, 0x01, 0x06, 0x04, 0xff]),
+  /**
+   * The camera's own memory presets (position, zoom, focus): recall moves the camera, store overwrites a slot.
+   * Preset N here is VISCA memory N, the same numbering GearOps uses on these cameras.
+   */
+  preset(host: string, port: number, action: 'recall' | 'store', n: unknown) {
+    const num = Number(n)
+    if (!Number.isInteger(num) || num < 0 || num > 127) throw new RangeError('preset must be a whole number from 0 to 127')
+    return command(host, port, [0x81, 0x01, 0x04, 0x3f, action === 'store' ? 0x01 : 0x02, num, 0xff])
+  },
 }
 
 export const EXPOSURE_MODES = [0x00, 0x03, 0x0a, 0x0b, 0x0d] // full auto, manual, shutter pri, iris pri, bright

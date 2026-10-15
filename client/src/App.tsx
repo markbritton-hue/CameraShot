@@ -5,6 +5,7 @@ import StageView, { LIVE_COLOR, PREVIEW_COLOR } from './StageView'
 import Setup from './Setup'
 import CloudPanel from './CloudPanel'
 import StartPage from './StartPage'
+import CameraView from './CameraView'
 import { useCloud } from './cloud'
 
 const CLIENT_ID = crypto.randomUUID()
@@ -37,6 +38,7 @@ export default function App() {
   const [connected, setConnected] = useState(false)
   const [atem, setAtem] = useState<AtemStatus>({ state: 'off' })
   const [setupOpen, setSetupOpen] = useState(false)
+  const [viewCameraId, setViewCameraId] = useState<string | null>(null) // camera whose live view window is open
   // the start page (sign in, pick or create a show) comes first; the editor stays mounted behind it
   const [screen, setScreen] = useState<'start' | 'editor'>('start')
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -275,7 +277,7 @@ export default function App() {
           </div>
         )}
         <StageView show={show} live={live} width={size.w} height={size.h} selectedId={selectedId} selectedItemId={selectedItemId}
-          editable={!display} onSelect={selectCamera} onSelectItem={selectItem} onCameraChange={patchCamera}
+          editable={!display} onSelect={selectCamera} onSelectItem={selectItem} onCameraChange={patchCamera} onCameraOpen={setViewCameraId}
           onItemMove={moveItem} onItemResize={resizeItem} onItemRotate={rotateItem} onPointMove={movePoint} />
       </div>
 
@@ -443,6 +445,16 @@ export default function App() {
           onNew={startNewShow}
           onLocal={() => { cloud.unlink(); setScreen('editor') }}
         />
+      )}
+
+      {viewCameraId && show.cameras.some((c) => c.id === viewCameraId) && (
+        <CameraView
+          camera={show.cameras.find((c) => c.id === viewCameraId)!}
+          serverAvailable={connected && !STATIC_MODE}
+          onAir={show.cameras.find((c) => c.id === viewCameraId)?.atemInput === live.program}
+          onClose={() => setViewCameraId(null)}
+          onOpenSetup={() => { setViewCameraId(null); setSetupOpen(true) }}
+          onPatch={(patch) => patchCamera(viewCameraId, patch)} />
       )}
 
       {setupOpen && (

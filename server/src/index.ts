@@ -8,7 +8,7 @@ import { execFile } from 'node:child_process'
 import { defaultShow, IPV4, normalizeShow } from '../../shared/types'
 import type { LiveState, ServerMessage, Show } from '../../shared/types'
 import { createAtemLink } from './atem'
-import { applySetting, readStatus } from './visca'
+import { applySetting, drive, readStatus } from './visca'
 import { createVideo } from './video'
 import type { PtzSetting } from '../../shared/types'
 import { DEFAULT_VISCA_PORT } from '../../shared/types'
@@ -174,16 +174,16 @@ for (const which of ['program', 'preview'] as const) {
 }
 
 /**
- * PTZ camera image controls (exposure, gain, white balance) over VISCA.
- * Only cameras whose IP is entered in this show's setup are reachable, so the endpoint can't be
- * pointed at arbitrary devices on the network.
+ * PTZ camera control (movement, exposure, gain, white balance) over VISCA.
+ * Only cameras marked PTZ with an IP entered in this show's setup are reachable, so the endpoints can't
+ * be pointed at arbitrary devices on the network or at fixed cameras.
  */
 const ptzTarget = (host: string | undefined) => {
-  const cam = show.cameras.find((c) => c.ip && c.ip === host)
+  const cam = show.cameras.find((c) => c.ptz && c.ip && c.ip === host)
   return cam ? { host: cam.ip as string, port: cam.viscaPort ?? DEFAULT_VISCA_PORT } : null
 }
 const SETTINGS: PtzSetting[] = ['exposureMode', 'gain', 'wbMode', 'redGain', 'blueGain', 'onePush', 'blc', 'expComp', 'expCompLevel', 'saturation', 'hue']
-const NOT_CONFIGURED = 'that IP is not a camera in this show. Enter it in Setup and wait a moment for it to save.'
+const NOT_CONFIGURED = 'that IP is not a PTZ camera in this show. Tick PTZ and enter its IP in Setup, then wait a moment for it to save.'
 
 app.get<{ Querystring: { host?: string } }>('/api/ptz/status', async (req, reply) => {
   const t = ptzTarget(req.query.host)
@@ -211,6 +211,41 @@ app.post<{ Body: { host?: string; setting?: PtzSetting; value?: number } }>('/ap
     return { ok: true, status: await readStatus(t.host, t.port) }
   } catch {
     return { ok: true }
+  }
+})
+
+/**
+ * Pan / tilt / zoom. The page sends "move" repeatedly while a button is held; if those stop arriving
+ * (tab closed, network drop, lost "stop" packet) this watchdog stops the camera by itself.
+ */
+const WATCHDOG_MS = 1500
+const moveWatchdogs = new Map<string, ReturnType<typeof setTimeout>>()
+const armWatchdog = (t: { host: string; port: number }) => {
+  const key = `${t.host}:${t.port}`
+  clearTimeout(moveWatchdogs.get(key))
+  moveWatchdogs.set(key, setTimeout(() => {
+    moveWatchdogs.delete(key)
+    void drive.stop(t.host, t.port).catch(() => {})
+  }, WATCHDOG_MS))
+}
+
+app.post<{ Body: { host?: string; action?: string; dir?: string; speed?: number; n?: number } }>('/api/ptz/drive', async (req, reply) => {
+  const { host, action, dir, speed, n } = req.body ?? {}
+  const t = ptzTarget(host)
+  if (!t) return reply.code(404).send({ ok: false, error: NOT_CONFIGURED })
+  try {
+    switch (action) {
+      case 'move': await drive.move(t.host, t.port, String(dir), speed); armWatchdog(t); break
+      case 'zoom': await drive.zoom(t.host, t.port, String(dir), speed); armWatchdog(t); break
+      case 'stop': clearTimeout(moveWatchdogs.get(`${t.host}:${t.port}`)); await drive.stop(t.host, t.port); break
+      case 'home': await drive.home(t.host, t.port); break
+      case 'recall':
+      case 'store': await drive.preset(t.host, t.port, action, n); break
+      default: return reply.code(400).send({ ok: false, error: 'action must be move, zoom, stop, home, recall or store' })
+    }
+    return { ok: true }
+  } catch (e) {
+    return reply.code(e instanceof RangeError ? 400 : 502).send({ ok: false, error: e instanceof Error ? e.message : String(e) })
   }
 })
 

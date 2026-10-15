@@ -15,6 +15,8 @@ export interface Camera {
   atemInput: number
   /** the camera's own IP address on the network (for reachability checks; later PTZ control) */
   ip?: string
+  /** a PTZ camera: unlocks pan/tilt/zoom and the image controls (VISCA). Off for fixed cameras. */
+  ptz?: boolean
   /** UDP port for VISCA over IP; 1259 for most cameras (AVKANS / PTZOptics style) */
   viscaPort?: number
   /** RTSP path for the live view, e.g. "/2" (the lower-resolution stream on most AVKANS cameras) */
@@ -127,7 +129,8 @@ export function normalizeShow(s: Show): Show {
     updatedAt: s.updatedAt ?? 0,
     settings: { ...s.settings, atemIp: s.settings.atemIp ?? '' },
     items: s.items.map((i) => ({ ...i, kind: i.kind ?? 'platform', points: i.points ?? [] })),
-    cameras: s.cameras.map((c) => ({ ...c, presets: c.presets ?? [] })),
+    // shows saved before the PTZ checkbox existed: a camera that already has an IP was being controlled, so keep it PTZ
+    cameras: s.cameras.map((c) => ({ ...c, presets: c.presets ?? [], ptz: c.ptz ?? Boolean(c.ip) })),
   }
 }
 

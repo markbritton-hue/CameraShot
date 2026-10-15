@@ -9,6 +9,8 @@ interface Props {
   camNumber: number
   rtspPath: string | undefined
   onRtspPath: (path: string | undefined) => void
+  /** false when the caller already shows the live picture (the camera viewer window) */
+  showLive?: boolean
 }
 
 interface VideoStatus { state: 'missing' | 'off' | 'starting' | 'ready' | 'error'; port: number; streams: string[]; error?: string }
@@ -18,7 +20,7 @@ const DEFAULT_RTSP_PATH = '/2'
 const ON_THIS_PC = ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname)
 
 /** Live picture from the camera: go2rtc turns its RTSP stream into something the browser can play. */
-function LiveView({ camNumber, rtspPath, onRtspPath }: Pick<Props, 'camNumber' | 'rtspPath' | 'onRtspPath'>) {
+export function LiveView({ camNumber, rtspPath, onRtspPath }: Pick<Props, 'camNumber' | 'rtspPath' | 'onRtspPath'>) {
   const [video, setVideo] = useState<VideoStatus | null>(null)
   const [open, setOpen] = useState(true)
   const stream = `cam${camNumber}`
@@ -84,7 +86,7 @@ type SliderKey = 'gain' | 'redGain' | 'blueGain' | 'expCompLevel' | 'saturation'
 const hex = (n: number) => `0x${n.toString(16).toUpperCase().padStart(2, '0')}`
 
 /** Exposure, white balance and colour for one PTZ camera, read from and sent to the camera over VISCA. */
-export default function PtzControls({ host, port, onPort, camNumber, rtspPath, onRtspPath }: Props) {
+export default function PtzControls({ host, port, onPort, camNumber, rtspPath, onRtspPath, showLive = true }: Props) {
   const [status, setStatus] = useState<PtzStatus | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -149,7 +151,7 @@ export default function PtzControls({ host, port, onPort, camNumber, rtspPath, o
 
   return (
     <div className="ptz">
-      <LiveView camNumber={camNumber} rtspPath={rtspPath} onRtspPath={onRtspPath} />
+      {showLive && <LiveView camNumber={camNumber} rtspPath={rtspPath} onRtspPath={onRtspPath} />}
       <div className="ptz-bar">
         <button onClick={() => void load()} disabled={busy}>{busy ? 'Working…' : 'Read from camera'}</button>
         <label className="ptz-port">VISCA port

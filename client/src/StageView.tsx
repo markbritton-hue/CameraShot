@@ -22,13 +22,15 @@ interface Props {
   onSelect: (id: string | null) => void
   onSelectItem: (id: string | null) => void
   onCameraChange: (id: string, patch: Partial<Camera>) => void
+  /** double-click (or double-tap) a camera icon */
+  onCameraOpen: (id: string) => void
   onItemMove: (id: string, x: number, y: number) => void
   onItemResize: (id: string, w: number, h: number) => void
   onItemRotate: (id: string, rotation: number) => void
   onPointMove: (itemId: string, pointId: string, x: number, y: number) => void
 }
 
-export default function StageView({ show, live, width, height, selectedId, selectedItemId, editable, onSelect, onSelectItem, onCameraChange, onItemMove, onItemResize, onItemRotate, onPointMove }: Props) {
+export default function StageView({ show, live, width, height, selectedId, selectedItemId, editable, onSelect, onSelectItem, onCameraChange, onCameraOpen, onItemMove, onItemResize, onItemRotate, onPointMove }: Props) {
   const clearSelection = () => { onSelect(null); onSelectItem(null) }
   const { stage } = show
   const pad = 24
@@ -153,7 +155,8 @@ export default function StageView({ show, live, width, height, selectedId, selec
               {/* camera body */}
               <Group x={cx} y={cy} draggable={editable}
                 onDragMove={(e) => onCameraChange(cam.id, { x: e.target.x() / s, y: e.target.y() / s })}
-                onMouseDown={() => onSelect(cam.id)}>
+                onMouseDown={() => onSelect(cam.id)}
+                onDblClick={() => onCameraOpen(cam.id)} onDblTap={() => onCameraOpen(cam.id)}>
                 {emphasis && <Circle radius={26} fill={col} opacity={0.25} listening={false} />}
                 <Circle radius={16} fill={col} stroke={cam.id === selectedId ? '#fff' : '#0b0e14'} strokeWidth={cam.id === selectedId ? 3 : 2} />
                 <Text text={String(cam.number)} x={-16} y={-8} width={32} align="center" fontStyle="bold" fontSize={16} fill="#0b0e14" listening={false} />

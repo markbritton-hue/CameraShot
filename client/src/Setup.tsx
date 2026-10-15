@@ -105,15 +105,16 @@ export default function Setup({ show, atem, serverAvailable, onClose, update }: 
           <h3>Cameras</h3>
           <p className="hint">
             Match each camera to the ATEM input it's plugged into, and enter its network address. The address is used for
-            the reachability check now, and is where PTZ control would connect later.
+            the reachability check and for control. Tick <b>PTZ</b> on pan/tilt/zoom cameras to unlock their
+            Controls here and the pan/tilt buttons when you double-click the camera on the stage.
           </p>
           <table className="cam-table">
-            <thead><tr><th>Camera</th><th>ATEM input</th><th>IP address</th><th /></tr></thead>
+            <thead><tr><th>Camera</th><th>ATEM input</th><th>IP address</th><th title="Tick for a pan/tilt/zoom camera you want to control from CameraShot">PTZ</th><th /></tr></thead>
             <tbody>
               {show.cameras.flatMap((c) => {
                 const ip = c.ip ?? ''
                 const valid = IPV4.test(ip.trim())
-                const open = controlsFor === c.id
+                const open = controlsFor === c.id && !!c.ptz
                 return [
                   <tr key={c.id}>
                     <td><span className="dot" style={{ background: c.color }} /> {c.number} · {c.name}</td>
@@ -127,17 +128,23 @@ export default function Setup({ show, atem, serverAvailable, onClose, update }: 
                         className={ip && !valid ? 'invalid' : ''}
                         onChange={(e) => patchCamera(c.id, { ip: e.target.value.trim() })} />
                     </td>
+                    <td className="ptz-check">
+                      <input type="checkbox" checked={!!c.ptz} aria-label={`Camera ${c.number} is a PTZ camera`}
+                        onChange={(e) => { patchCamera(c.id, { ptz: e.target.checked }); if (!e.target.checked && controlsFor === c.id) setControlsFor(null) }} />
+                    </td>
                     <td className="ping-cell">
                       <button disabled={!valid || !serverAvailable} onClick={() => runPing(c.id, ip.trim())}>Test</button>
-                      <button disabled={!valid || !serverAvailable} className={open ? 'active' : ''}
-                        title="Exposure, gain and white balance for this PTZ camera"
-                        onClick={() => setControlsFor(open ? null : c.id)}>Controls</button>
+                      {c.ptz && (
+                        <button disabled={!valid || !serverAvailable} className={open ? 'active' : ''}
+                          title="Live view, exposure, gain and white balance for this PTZ camera"
+                          onClick={() => setControlsFor(open ? null : c.id)}>Controls</button>
+                      )}
                       <PingBadge result={pings[c.id]} />
                     </td>
                   </tr>,
                   open && (
                     <tr key={`${c.id}-ptz`} className="ptz-row">
-                      <td colSpan={4}>
+                      <td colSpan={5}>
                         <PtzControls host={ip.trim()} port={c.viscaPort} onPort={(p) => patchCamera(c.id, { viscaPort: p })}
                           camNumber={c.number} rtspPath={c.rtspPath} onRtspPath={(p) => patchCamera(c.id, { rtspPath: p })} />
                       </td>
