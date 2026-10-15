@@ -1,14 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { aimTargets, defaultShow, normalizeShow } from '../../shared/types'
-import type { AtemStatus, Camera, CameraPreset, LiveState, ServerMessage, Show, StageItem } from '../../shared/types'
+import type { AtemStatus, Camera, CameraPreset, LiveState, PtzStates, ServerMessage, Show, StageItem } from '../../shared/types'
 import StageView, { LIVE_COLOR, PREVIEW_COLOR } from './StageView'
 import Setup from './Setup'
 import CloudPanel from './CloudPanel'
 import StartPage from './StartPage'
 import CameraView from './CameraView'
+import LiveWindow from './LiveWindow'
 import { useCloud } from './cloud'
 
 const CLIENT_ID = crypto.randomUUID()
+// platform colours: the default steel grey first, then black, wood, grey, red, blue, green, gold, purple, white
+const DEFAULT_PLATFORM_COLOR = '#2b3447'
+const PLATFORM_COLORS = [DEFAULT_PLATFORM_COLOR, '#111827', '#6b4f3a', '#8b8f99', '#b91c1c', '#1d4ed8', '#15803d', '#a16207', '#7e22ce', '#e5e7eb']
 const COLORS = ['#38bdf8', '#a78bfa', '#fbbf24', '#f472b6', '#34d399', '#fb923c', '#60a5fa', '#c084fc']
 
 // On GitHub Pages there is no Node server: the app runs as a standalone planner that saves in the browser.
@@ -37,8 +41,11 @@ export default function App() {
   const [live, setLive] = useState<LiveState>({ program: null, preview: null })
   const [connected, setConnected] = useState(false)
   const [atem, setAtem] = useState<AtemStatus>({ state: 'off' })
+  const [ptz, setPtz] = useState<PtzStates>({}) // each PTZ camera's current preset, watched by the server
   const [setupOpen, setSetupOpen] = useState(false)
   const [viewCameraId, setViewCameraId] = useState<string | null>(null) // camera whose live view window is open
+  const [liveWins, setLiveWins] = useState<string[]>([]) // floating live pictures, last = on top
+  const openLiveWin = useCallback((id: string) => setLiveWins((w) => [...w.filter((x) => x !== id), id]), [])
   // the start page (sign in, pick or create a show) comes first; the editor stays mounted behind it
   const [screen, setScreen] = useState<'start' | 'editor'>('start')
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -48,7 +55,6 @@ export default function App() {
   const wrapRef = useRef<HTMLDivElement>(null)
   const saveTimer = useRef<number | undefined>(undefined)
   const syncReady = useRef(false) // true once the server has said hello on the current connection
-  const fileRef = useRef<HTMLInputElement>(null)
 
   // take a show as the current one (from the server) and cache it in the browser
   const adopt = useCallback((s: Show) => {
@@ -99,6 +105,7 @@ export default function App() {
         if (msg.type === 'hello') {
           setLive(msg.live)
           setAtem(msg.atem)
+          setPtz(msg.ptz ?? {})
           const server = normalizeShow(msg.show)
           syncReady.current = true
           // whichever copy was edited last wins, so offline edits are pushed up and never overwritten
@@ -109,6 +116,7 @@ export default function App() {
           if (incoming.updatedAt >= showRef.current.updatedAt) adopt(incoming)
         } else if (msg.type === 'live') setLive(msg.live)
         else if (msg.type === 'atem') setAtem(msg.atem)
+        else if (msg.type === 'ptz') setPtz(msg.ptz)
       }
     }
     connect()
@@ -124,6 +132,14 @@ export default function App() {
     return () => ro.disconnect()
   }, [])
 
+  // one tap on a preset chip sends the camera there; if it is live on the ATEM, ask first
+  const recallSlot = useCallback((cameraId: string, n: number) => {
+    const cam = show.cameras.find((c) => c.id === cameraId)
+    if (!cam?.ip) return
+    if (cam.atemInput === live.program && !window.confirm(`Cam ${cam.number} is live on the ATEM. Move it to preset ${n} on air?`)) return
+    void fetch('/api/ptz/drive', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ host: cam.ip, action: 'recall', n }) })
+  }, [show.cameras, live.program])
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setDisplay(false)
     window.addEventListener('keydown', onKey)
@@ -136,12 +152,12 @@ export default function App() {
     setSelectedItemId(null)
   })
 
-  // a new show starts empty but keeps your cameras (inputs, IPs) and ATEM settings, without their presets
   // A show that is linked to the cloud autosaves there, but a browser-only show would be lost when replaced.
   const okToReplaceCurrent = () =>
     cloud.cloudId !== null || show.updatedAt === 0 ||
-    window.confirm('The show open in this browser has not been saved to the cloud. Continuing will replace it. Continue?\n\n(Cancel, then use Continue without signing in > Export or Save to cloud first.)')
+    window.confirm('The show open in this browser has not been saved to the cloud. Continuing will replace it. Continue?\n\n(Cancel, then use "Save to cloud" in the sidebar first.)')
 
+  // a new show starts empty but keeps your cameras (inputs, IPs) and ATEM settings, without their presets
   const startNewShow = (name: string) => {
     if (!okToReplaceCurrent()) return
     const base: Show = {
@@ -152,26 +168,6 @@ export default function App() {
     }
     void cloud.create(base)
     setScreen('editor')
-  }
-
-  const exportShow = () => {
-    const a = document.createElement('a')
-    a.href = URL.createObjectURL(new Blob([JSON.stringify(show, null, 2)], { type: 'application/json' }))
-    a.download = `${show.name.replace(/[^\w\- ]+/g, '').trim() || 'show'}.json`
-    a.click()
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000)
-  }
-
-  const importShow = async (file: File) => {
-    try {
-      const parsed = JSON.parse(await file.text())
-      if (!parsed || !Array.isArray(parsed.cameras) || !Array.isArray(parsed.items) || !parsed.stage) throw new Error('not a CameraShot show file')
-      update(() => normalizeShow(parsed))
-      setSelectedId(null)
-      setSelectedItemId(null)
-    } catch (e) {
-      alert(`Couldn't import that file: ${(e as Error).message}`)
-    }
   }
 
   const selectCamera = useCallback((id: string | null) => {
@@ -219,25 +215,25 @@ export default function App() {
     const n = show.cameras.reduce((m, c) => Math.max(m, c.number), 0) + 1
     const cam: Camera = {
       id: crypto.randomUUID(), number: n, name: `Cam ${n}`, color: COLORS[(n - 1) % COLORS.length], atemInput: Math.min(n, 8),
-      x: show.stage.width / 2, y: show.stage.depth - 0.5, fov: 40,
-      focus: { x: show.stage.width / 2, y: show.stage.depth / 3, radius: 1.5 }, presets: [],
+      x: show.stage.width / 2, y: show.stage.depth - 2, fov: 40,
+      focus: { x: show.stage.width / 2, y: show.stage.depth / 3, radius: 5 }, presets: [],
     }
     update((s) => ({ ...s, cameras: [...s.cameras, cam] }))
     selectCamera(cam.id)
   }
   const addPlatform = () => {
-    const it: StageItem = { id: crypto.randomUUID(), kind: 'platform', label: 'Platform', x: 1, y: 1, w: 2, h: 1.5, rotation: 0, points: [] }
+    const it: StageItem = { id: crypto.randomUUID(), kind: 'platform', label: 'Platform', x: 4, y: 4, w: 8, h: 4, rotation: 0, points: [] }
     update((s) => ({ ...s, items: [...s.items, it] }))
     selectItem(it.id)
   }
   const addStairs = () => {
-    const it: StageItem = { id: crypto.randomUUID(), kind: 'stairs', label: 'Stairs', steps: 3, x: 1, y: 1, w: 2, h: 1.5, rotation: 0, points: [] }
+    const it: StageItem = { id: crypto.randomUUID(), kind: 'stairs', label: 'Stairs', steps: 3, x: 4, y: 4, w: 6, h: 3, rotation: 0, points: [] }
     update((s) => ({ ...s, items: [...s.items, it] }))
     selectItem(it.id)
   }
   const addPerson = () => {
     const n = show.items.filter((i) => i.kind === 'person').length + 1
-    const it: StageItem = { id: crypto.randomUUID(), kind: 'person', label: `Person ${n}`, x: show.stage.width / 2, y: show.stage.depth / 2, w: 0.6, h: 0.6, rotation: 0, points: [] }
+    const it: StageItem = { id: crypto.randomUUID(), kind: 'person', label: `Person ${n}`, x: show.stage.width / 2, y: show.stage.depth / 2, w: 1.5, h: 1.5, rotation: 0, points: [] }
     update((s) => ({ ...s, items: [...s.items, it] }))
     selectItem(it.id)
   }
@@ -278,11 +274,25 @@ export default function App() {
         )}
         <StageView show={show} live={live} width={size.w} height={size.h} selectedId={selectedId} selectedItemId={selectedItemId}
           editable={!display} onSelect={selectCamera} onSelectItem={selectItem} onCameraChange={patchCamera} onCameraOpen={setViewCameraId}
+          ptz={ptz} onPresetChip={recallSlot} onLiveIcon={openLiveWin}
           onItemMove={moveItem} onItemResize={resizeItem} onItemRotate={rotateItem} onPointMove={movePoint} />
+
+        {/* floating live pictures: 300 x 300 to start, drag the title to move, drag the corner to resize */}
+        {liveWins.map((id, i) => {
+          const cam = show.cameras.find((c) => c.id === id)
+          if (!cam) return null
+          return (
+            <LiveWindow key={id} camera={cam} bounds={{ w: size.w, h: size.h }} z={6 + i} startAt={{ x: 24 + i * 28, y: 70 + i * 28 }}
+              onFocus={() => openLiveWin(id)} onClose={() => setLiveWins((w) => w.filter((x) => x !== id))}
+              onOpenControls={() => setViewCameraId(id)} />
+          )
+        })}
+
       </div>
 
       {!display && (
-        <aside className="side">
+        // the panel takes on the selected camera's colour (a tint, so the text stays readable)
+        <aside className={`side${selected ? ' has-cam' : ''}`} style={selected ? ({ '--cam': selected.color } as React.CSSProperties) : undefined}>
           <div className="title-row">
             <h1>CameraShot</h1>
             <button onClick={() => setScreen('start')} title="Back to the shows list">Shows</button>
@@ -290,23 +300,20 @@ export default function App() {
           </div>
           <input className="wide" value={show.name} onChange={(e) => update((s) => ({ ...s, name: e.target.value }))} />
           <p className="hint">
-            Saved in this browser ✓ · {STATIC_MODE ? 'standalone planner (no server). Use Export to keep a copy.' : connected ? (synced ? 'synced to server ✓' : 'syncing to server…') : 'server offline, will sync later'}
+            Saved in this browser ✓ · {STATIC_MODE ? 'standalone planner (no server). Sign in to keep shows in the cloud.' : connected ? (synced ? 'synced to server ✓' : 'syncing to server…') : 'server offline, will sync later'}
           </p>
-          <div className="row">
-            <button onClick={exportShow}>Export</button>
-            <button onClick={() => fileRef.current?.click()}>Import</button>
-            <button onClick={() => setDisplay(true)}>Display mode</button>
-          </div>
-          <input ref={fileRef} type="file" accept="application/json,.json" hidden
-            onChange={(e) => { const f = e.target.files?.[0]; if (f) importShow(f); e.target.value = '' }} />
+          <button onClick={() => setDisplay(true)}>Display mode</button>
 
           <CloudPanel cloud={cloud} onShows={() => setScreen('start')} />
 
-          <h2>Stage (metres)</h2>
+          <h2>Grid size (feet)</h2>
           <div className="row">
-            <label>W <input type="number" min={2} step={0.5} value={show.stage.width} onChange={(e) => update((s) => ({ ...s, stage: { ...s.stage, width: +e.target.value || 2 } }))} /></label>
-            <label>D <input type="number" min={2} step={0.5} value={show.stage.depth} onChange={(e) => update((s) => ({ ...s, stage: { ...s.stage, depth: +e.target.value || 2 } }))} /></label>
+            <label>Width <input type="number" min={4} step={1} value={show.stage.width} onChange={(e) => update((s) => ({ ...s, stage: { ...s.stage, width: +e.target.value || 4 } }))} /></label>
+            <label>Depth <input type="number" min={4} step={1} value={show.stage.depth} onChange={(e) => update((s) => ({ ...s, stage: { ...s.stage, depth: +e.target.value || 4 } }))} /></label>
+            <label>Grid square <input type="number" min={0.5} step={0.5} value={show.stage.grid ?? 2} title="Size of one grid square, in feet"
+              onChange={(e) => update((s) => ({ ...s, stage: { ...s.stage, grid: Math.max(0.5, +e.target.value || 2) } }))} /></label>
           </div>
+          <p className="hint">Each square is {show.stage.grid ?? 2} ft. The brighter lines (every {5 * (show.stage.grid ?? 2)} ft) are numbered from the top-left corner. Enter the real size of your stage.</p>
 
           <h2>Cameras <button onClick={addCamera}>+ Add</button></h2>
           <ul className="cams">
@@ -335,7 +342,7 @@ export default function App() {
                 </select>
               </label>
               <label>Zoom (FOV) {selected.fov}° <input type="range" min={10} max={120} value={selected.fov} onChange={(e) => patchCamera(selected.id, { fov: +e.target.value })} /></label>
-              <label>Focus radius {selected.focus.radius.toFixed(1)} m <input type="range" min={0.3} max={5} step={0.1} value={selected.focus.radius} onChange={(e) => patchCamera(selected.id, { focus: { ...selected.focus, radius: +e.target.value } })} /></label>
+              <label>Focus radius {selected.focus.radius.toFixed(1)} ft <input type="range" min={1} max={16} step={0.5} value={selected.focus.radius} onChange={(e) => patchCamera(selected.id, { focus: { ...selected.focus, radius: +e.target.value } })} /></label>
               <label>Colour <input type="color" value={selected.color} onChange={(e) => patchCamera(selected.id, { color: e.target.value })} /></label>
 
               <h3>Presets <button onClick={() => savePreset(selected)}>+ Save current</button></h3>
@@ -354,9 +361,9 @@ export default function App() {
                       <input type="number" min={10} max={120} step={1} value={p.fov}
                         onChange={(e) => patchPreset(selected, p.id, { fov: Math.min(120, Math.max(10, +e.target.value || 10)) })} />
                     </label>
-                    <label>Focus radius m
-                      <input type="number" min={0.3} max={5} step={0.1} value={p.focus.radius}
-                        onChange={(e) => patchPreset(selected, p.id, { focus: { ...p.focus, radius: Math.min(5, Math.max(0.3, +e.target.value || 0.3)) } })} />
+                    <label>Focus radius ft
+                      <input type="number" min={1} max={16} step={0.5} value={p.focus.radius}
+                        onChange={(e) => patchPreset(selected, p.id, { focus: { ...p.focus, radius: Math.min(16, Math.max(1, +e.target.value || 1)) } })} />
                     </label>
                   </div>
                 </div>
@@ -367,12 +374,11 @@ export default function App() {
             </div>
           )}
 
-          <h2>Stage items <span><button onClick={addPlatform}>+ Platform</button> <button onClick={addStairs}>+ Stairs</button> <button onClick={addPerson}>+ Person</button></span></h2>
+          <h2>Grid items <span><button onClick={addPlatform}>+ Platform</button> <button onClick={addStairs}>+ Stairs</button> <button onClick={addPerson}>+ Person</button></span></h2>
           <ul className="cams">
             {show.items.map((it) => (
               <li key={it.id} className={it.id === selectedItemId ? 'sel' : ''} onClick={() => selectItem(it.id)}>
                 <span>{it.kind === 'person' ? '🧍' : it.kind === 'stairs' ? '🪜' : '▭'}</span>{it.label}
-                {it.kind !== 'person' && <small>{it.points.length} pts</small>}
               </li>
             ))}
           </ul>
@@ -380,6 +386,20 @@ export default function App() {
           {selectedItem && (
             <div className="editor">
               <label>Label <input value={selectedItem.label} onChange={(e) => patchItem(selectedItem.id, { label: e.target.value })} /></label>
+              {selectedItem.kind === 'platform' && (
+                <div className="swatch-field">
+                  <span>Colour</span>
+                  <div className="swatches">
+                    {PLATFORM_COLORS.map((c) => (
+                      <button key={c} className={`swatch${(selectedItem.color ?? DEFAULT_PLATFORM_COLOR).toLowerCase() === c ? ' on' : ''}`}
+                        style={{ background: c }} title={c === DEFAULT_PLATFORM_COLOR ? 'Default steel grey' : c}
+                        onClick={() => patchItem(selectedItem.id, { color: c === DEFAULT_PLATFORM_COLOR ? undefined : c })} />
+                    ))}
+                    <input type="color" value={selectedItem.color ?? DEFAULT_PLATFORM_COLOR} title="Pick any colour"
+                      onChange={(e) => patchItem(selectedItem.id, { color: e.target.value })} />
+                  </div>
+                </div>
+              )}
               {selectedItem.kind !== 'person' && (
                 <>
                   {selectedItem.kind === 'stairs' && (
@@ -389,8 +409,8 @@ export default function App() {
                     </label>
                   )}
                   <div className="row">
-                    <label>Width <input type="number" step={0.5} min={0.5} value={selectedItem.w} onChange={(e) => patchItem(selectedItem.id, { w: +e.target.value || 0.5 })} /></label>
-                    <label>Depth <input type="number" step={0.5} min={0.5} value={selectedItem.h} onChange={(e) => patchItem(selectedItem.id, { h: +e.target.value || 0.5 })} /></label>
+                    <label>Width ft <input type="number" step={0.5} min={1} value={selectedItem.w} onChange={(e) => patchItem(selectedItem.id, { w: +e.target.value || 1 })} /></label>
+                    <label>Depth ft <input type="number" step={0.5} min={1} value={selectedItem.h} onChange={(e) => patchItem(selectedItem.id, { h: +e.target.value || 1 })} /></label>
                     <label>Rotate° <input type="number" step={5} value={selectedItem.rotation} onChange={(e) => patchItem(selectedItem.id, { rotation: +e.target.value })} /></label>
                   </div>
                   <h3>Points <button onClick={() => addPoint(selectedItem)}>+ Add point</button></h3>
@@ -452,6 +472,7 @@ export default function App() {
           camera={show.cameras.find((c) => c.id === viewCameraId)!}
           serverAvailable={connected && !STATIC_MODE}
           onAir={show.cameras.find((c) => c.id === viewCameraId)?.atemInput === live.program}
+          ptzState={ptz[viewCameraId]}
           onClose={() => setViewCameraId(null)}
           onOpenSetup={() => { setViewCameraId(null); setSetupOpen(true) }}
           onPatch={(patch) => patchCamera(viewCameraId, patch)} />

@@ -127,6 +127,30 @@ export const drive = {
   },
 }
 
+export interface PtzPosition {
+  /** last memory preset that was recalled (not necessarily where the camera is now) */
+  preset: number
+  pan: number
+  tilt: number
+  zoom: number
+}
+
+// replies carry values as one hex digit per byte: 90 50 0a 0b 0c 0d ... FF
+const fromNibbles = (r: number[], from: number, count: number) => {
+  let v = 0
+  for (let i = 0; i < count; i++) v = (v << 4) | ((r[from + i] ?? 0) & 0x0f)
+  return v
+}
+const signed16 = (v: number) => (v & 0x8000 ? v - 0x10000 : v)
+
+/** Where the camera is now: last recalled preset plus absolute pan, tilt and zoom. Read-only. */
+export async function readPosition(host: string, port: number): Promise<PtzPosition> {
+  const preset = (await inquire(host, port, [0x81, 0x09, 0x04, 0x3f, 0xff]))[2] ?? 0
+  const pt = await inquire(host, port, [0x81, 0x09, 0x06, 0x12, 0xff])
+  const zoom = await inquire(host, port, [0x81, 0x09, 0x04, 0x47, 0xff])
+  return { preset, pan: signed16(fromNibbles(pt, 2, 4)), tilt: signed16(fromNibbles(pt, 6, 4)), zoom: fromNibbles(zoom, 2, 4) }
+}
+
 export const EXPOSURE_MODES = [0x00, 0x03, 0x0a, 0x0b, 0x0d] // full auto, manual, shutter pri, iris pri, bright
 // auto, indoor, outdoor, one-push, ATW, manual, and 0x0B ("Static", the colour-temperature mode on AVKANS-style cameras)
 export const WB_MODES = [0, 1, 2, 3, 4, 5, 0x0b]

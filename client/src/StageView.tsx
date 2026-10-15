@@ -1,5 +1,77 @@
 import { Arrow, Circle, Ellipse, Group, Layer, Line, Rect, Stage, Text, Wedge } from 'react-konva'
-import type { Camera, LiveState, Show } from '../../shared/types'
+import { IPV4 } from '../../shared/types'
+import type { Camera, LiveState, PtzCameraState, PtzStates, Show } from '../../shared/types'
+
+// The preset the camera is on is drawn RED; the other known presets are quiet blue-grey.
+// Solid red = on it, darker red = on its way, dashed = it has moved off, outline only = can't tell.
+const CURRENT = {
+  on: { stroke: '#fca5a5', fill: '#b91c1c', text: '#ffffff' },
+  moving: { stroke: '#f87171', fill: '#7f1d1d', text: '#fecaca' },
+  moved: { stroke: '#ef4444', fill: '#3b0d0d', text: '#fca5a5' },
+  unknown: { stroke: '#ef4444', fill: '#1f2937', text: '#fca5a5' },
+} as const
+const OTHER = { stroke: '#3a4760', fill: '#1c2433', text: '#9fb0cc' }
+
+/** A dark version of a colour for tag backgrounds: `amount` of the colour mixed into the stage's dark base. */
+function darken(hex: string, amount: number) {
+  const base = [16, 21, 30]
+  const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16))
+  if (c.some(Number.isNaN)) return '#1c2433'
+  return `rgb(${c.map((v, i) => Math.round(v * amount + base[i] * (1 - amount))).join(',')})`
+}
+
+const rgb = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16))
+/** `t` of colour a mixed with the rest b, as an rgb() string */
+function mixHex(a: string, b: string, t: number) {
+  const x = rgb(a), y = rgb(b)
+  if (x.some(Number.isNaN) || y.some(Number.isNaN)) return a
+  return `rgb(${x.map((v, i) => Math.round(v * t + y[i] * (1 - t))).join(',')})`
+}
+/** perceived lightness 0 (black) to 1 (white) */
+function lightness(hex: string) {
+  const [r, g, b] = rgb(hex).map((v) => { const c = v / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4 })
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+/** colours for a platform: its fill, an edge a little lighter or darker, and text that stays readable on it */
+export function platformLook(color: string | undefined) {
+  if (!color || !/^#[0-9a-fA-F]{6}$/.test(color)) return { fill: '#2b3447', edge: '#5b6780', text: '#b6c0d4', sub: '#8a97b2' }
+  // near-black text wins over white text once the fill is lighter than ~0.19 (where their contrast ratios cross)
+  const light = lightness(color) > 0.19
+  return {
+    fill: color,
+    edge: mixHex(color, light ? '#000000' : '#ffffff', 0.7),
+    text: light ? '#0b0e14' : '#ffffff',
+    sub: light ? 'rgba(11,14,20,.78)' : 'rgba(255,255,255,.82)',
+  }
+}
+
+/** 12 -> 12', 13.12 -> 13.1' */
+const feet = (n: number) => `${+n.toFixed(1)}'`
+
+const CHIP_H = 22
+const COLUMN_X = 34 // distance (px) from the camera's centre to the first column of preset chips
+const ROW_PITCH = CHIP_H + 4
+const MAX_ROWS = 8 // chips per column before starting another column to the right
+const COLUMN_GAP = 6
+
+/**
+ * Stack preset chips in a vertical column to the right of the camera circle, centred on the camera and
+ * left-aligned. Past MAX_ROWS the next chips start a new column further right, so any number fits.
+ * Returns each chip's centre relative to the camera's centre.
+ */
+function placeInColumns<T extends { w: number }>(items: T[]) {
+  const placed: (T & { x: number; y: number })[] = []
+  let x0 = COLUMN_X
+  for (let i = 0; i < items.length; i += MAX_ROWS) {
+    const column = items.slice(i, i + MAX_ROWS)
+    const colWidth = Math.max(...column.map((c) => c.w))
+    column.forEach((item, row) => {
+      placed.push({ ...item, x: x0 + item.w / 2, y: (row - (column.length - 1) / 2) * ROW_PITCH })
+    })
+    x0 += colWidth + COLUMN_GAP
+  }
+  return placed
+}
 
 export const LIVE_COLOR = '#ef4444'
 export const PREVIEW_COLOR = '#22c55e'
@@ -24,13 +96,19 @@ interface Props {
   onCameraChange: (id: string, patch: Partial<Camera>) => void
   /** double-click (or double-tap) a camera icon */
   onCameraOpen: (id: string) => void
+  /** which preset each PTZ camera is on (from the server's watcher) */
+  ptz: PtzStates
+  /** click one preset chip: send the camera to that preset */
+  onPresetChip: (id: string, preset: number) => void
+  /** click the little camera badge: open a floating live picture of that camera */
+  onLiveIcon: (id: string) => void
   onItemMove: (id: string, x: number, y: number) => void
   onItemResize: (id: string, w: number, h: number) => void
   onItemRotate: (id: string, rotation: number) => void
   onPointMove: (itemId: string, pointId: string, x: number, y: number) => void
 }
 
-export default function StageView({ show, live, width, height, selectedId, selectedItemId, editable, onSelect, onSelectItem, onCameraChange, onCameraOpen, onItemMove, onItemResize, onItemRotate, onPointMove }: Props) {
+export default function StageView({ show, live, width, height, selectedId, selectedItemId, editable, onSelect, onSelectItem, onCameraChange, onCameraOpen, ptz, onPresetChip, onLiveIcon, onItemMove, onItemResize, onItemRotate, onPointMove }: Props) {
   const clearSelection = () => { onSelect(null); onSelectItem(null) }
   const { stage } = show
   const pad = 24
@@ -40,7 +118,7 @@ export default function StageView({ show, live, width, height, selectedId, selec
   const anyLive = live.program !== null || live.preview !== null
   const selectedPlatform = show.items.find((i) => i.id === selectedItemId && i.kind !== 'person') ?? null
   const selectedPerson = show.items.find((i) => i.id === selectedItemId && i.kind === 'person') ?? null
-  const personR = Math.max(12, 0.3 * s)
+  const personR = Math.max(9, 0.6 * s) // drawn about 1.2 ft across (a real adult is ~1.6 ft; shown smaller to keep the plan uncluttered)
 
   // Angle (snapped to 5°) that points the item's "up" at the mouse, for a handle dragged around centre (cx, cy) in stage units
   const rotationToPointer = (e: { target: { getStage: () => { getPointerPosition: () => { x: number; y: number } | null } | null } }, cx: number, cy: number) => {
@@ -51,8 +129,44 @@ export default function StageView({ show, live, width, height, selectedId, selec
   }
 
   const gridLines = []
-  for (let x = 0; x <= stage.width; x++) gridLines.push(<Line key={`gx${x}`} points={[x * s, 0, x * s, stage.depth * s]} stroke="#2a3140" strokeWidth={1} listening={false} />)
-  for (let y = 0; y <= stage.depth; y++) gridLines.push(<Line key={`gy${y}`} points={[0, y * s, stage.width * s, y * s]} stroke="#2a3140" strokeWidth={1} listening={false} />)
+  // Everything on the stage is in feet. One grid square is `grid` feet (default 2); every fifth line is brighter and
+  // labelled with its distance from the top-left corner, so the plan can be read like a tape measure.
+  const grid = stage.grid && stage.grid > 0 ? stage.grid : 2
+  const major = 5
+  const EPS = 1e-6
+  for (let i = 0; i * grid <= stage.width + EPS; i++) {
+    const x = i * grid * s
+    const isMajor = i % major === 0
+    gridLines.push(<Line key={`gx${i}`} points={[x, 0, x, stage.depth * s]} stroke={isMajor ? '#3a4560' : '#2a3140'} strokeWidth={isMajor ? 1.5 : 1} listening={false} />)
+    if (isMajor && i > 0) gridLines.push(<Text key={`lx${i}`} text={`${+(i * grid).toFixed(1)}'`} x={x + 3} y={3} fontSize={10} fill="#7b879c" listening={false} />)
+  }
+  for (let j = 0; j * grid <= stage.depth + EPS; j++) {
+    const y = j * grid * s
+    const isMajor = j % major === 0
+    gridLines.push(<Line key={`gy${j}`} points={[0, y, stage.width * s, y]} stroke={isMajor ? '#3a4560' : '#2a3140'} strokeWidth={isMajor ? 1.5 : 1} listening={false} />)
+    if (isMajor && j > 0) gridLines.push(<Text key={`ly${j}`} text={`${+(j * grid).toFixed(1)}'`} x={4} y={y + 3} fontSize={10} fill="#7b879c" listening={false} />)
+  }
+
+  /**
+   * A "P3" tag for a preset's aim point, in the camera's own colour, or red when it is the camera's current preset.
+   * `dot` draws a small dot at the aim point itself (used for presets the focus circle isn't sitting on).
+   */
+  const presetTag = (key: string, x: number, y: number, n: number, st: PtzCameraState | undefined, dot: boolean, camColor: string) => {
+    const cur = !!st && st.preset === n
+    const look = cur && st ? CURRENT[st.status] : { stroke: camColor, fill: darken(camColor, 0.28), text: camColor }
+    const label = `P${n}`
+    const w = 12 + 7 * label.length
+    const tx = dot ? 7 : 10
+    const ty = dot ? -22 : 8
+    return (
+      <Group key={key} x={x} y={y} listening={false}>
+        {dot && <Circle radius={4} fill={look.fill} stroke={look.stroke} strokeWidth={2} />}
+        <Rect x={tx} y={ty} width={w} height={17} cornerRadius={8.5} fill={look.fill} stroke={look.stroke} strokeWidth={cur ? 2 : 1.25}
+          dash={cur && st?.status === 'moved' ? [3, 2] : undefined} />
+        <Text text={label} x={tx} y={ty + 3} width={w} align="center" fontStyle="bold" fontSize={11} fill={look.text} />
+      </Group>
+    )
+  }
 
   const statusOf = (cam: Camera) =>
     cam.atemInput === live.program ? 'live' : cam.atemInput === live.preview ? 'preview' : 'idle'
@@ -111,8 +225,23 @@ export default function StageView({ show, live, width, height, selectedId, selec
                 )
               })() : (
                 <>
-                  <Rect width={it.w * s} height={it.h * s} fill="#2b3447" stroke={picked ? '#fff' : '#5b6780'} strokeWidth={picked ? 2 : 1} />
-                  <Text text={it.label} width={it.w * s} height={it.h * s} align="center" verticalAlign="middle" fill="#b6c0d4" fontSize={13} listening={false} />
+                  {(() => {
+                    const look = platformLook(it.color)
+                    return (
+                      <>
+                        <Rect width={it.w * s} height={it.h * s} fill={look.fill} stroke={picked ? '#fff' : look.edge} strokeWidth={picked ? 2 : 1} />
+                        {it.w * s >= 64 && it.h * s >= 40 ? (
+                          <>
+                            {/* platforms show their size in feet under the name (only when there is room for two lines) */}
+                            <Text text={it.label} width={it.w * s} y={(it.h * s) / 2 - 17} align="center" fill={look.text} fontSize={13} listening={false} />
+                            <Text text={`${feet(it.w)} × ${feet(it.h)}`} width={it.w * s} y={(it.h * s) / 2 + 2} align="center" fill={look.sub} fontSize={11} listening={false} />
+                          </>
+                        ) : (
+                          <Text text={it.label} width={it.w * s} height={it.h * s} align="center" verticalAlign="middle" fill={look.text} fontSize={13} listening={false} />
+                        )}
+                      </>
+                    )
+                  })()}
                 </>
               )}
               {/* plain markers; once the platform is selected its editable points move to the top layer below */}
@@ -134,12 +263,17 @@ export default function StageView({ show, live, width, height, selectedId, selec
           const dist = Math.hypot(dx, dy)
           const coneLen = dist + cam.focus.radius * s
           const emphasis = status !== 'idle'
+          const ptzNow = ptz[cam.id]
+          // which of this camera's saved presets the focus circle is sitting on right now, if any
+          const here = cam.presets.findIndex((p) => Math.hypot(p.focus.x - cam.focus.x, p.focus.y - cam.focus.y) < 0.05)
           return (
             <Group key={cam.id} opacity={dimmed ? 0.35 : 1}>
               <Wedge x={cx} y={cy} radius={coneLen} angle={cam.fov} rotation={heading - cam.fov / 2}
                 fill={col} opacity={status === 'live' ? 0.32 : status === 'preview' ? 0.22 : 0.1}
                 stroke={col} strokeWidth={emphasis ? 2 : 1} listening={false} />
               <Line points={[cx, cy, fx, fy]} stroke={col} strokeWidth={emphasis ? 2 : 1} dash={[6, 6]} listening={false} />
+              {/* where each of this camera's other presets aims: a dot with its P-number */}
+              {cam.presets.map((p, i) => (i === here ? null : presetTag(p.id, p.focus.x * s, p.focus.y * s, i + 1, ptzNow, true, cam.color)))}
               {/* focus area */}
               <Group x={fx} y={fy} draggable={editable}
                 onDragMove={(e) => onCameraChange(cam.id, { focus: { ...cam.focus, x: e.target.x() / s, y: e.target.y() / s } })}
@@ -151,6 +285,8 @@ export default function StageView({ show, live, width, height, selectedId, selec
                 <Line points={[-8, 0, 8, 0]} stroke={col} strokeWidth={2} listening={false} />
                 <Line points={[0, -8, 0, 8]} stroke={col} strokeWidth={2} listening={false} />
                 {emphasis && <Text text="FOCUS" y={-cam.focus.radius * s - 16} x={-30} width={60} align="center" fill={col} fontStyle="bold" fontSize={12} listening={false} />}
+                {/* the focus point is on one of the saved presets: label it (red when that is the camera's current preset) */}
+                {here >= 0 && presetTag(`here-${cam.id}`, 0, 0, here + 1, ptzNow, false, cam.color)}
               </Group>
               {/* camera body */}
               <Group x={cx} y={cy} draggable={editable}
@@ -160,7 +296,40 @@ export default function StageView({ show, live, width, height, selectedId, selec
                 {emphasis && <Circle radius={26} fill={col} opacity={0.25} listening={false} />}
                 <Circle radius={16} fill={col} stroke={cam.id === selectedId ? '#fff' : '#0b0e14'} strokeWidth={cam.id === selectedId ? 3 : 2} />
                 <Text text={String(cam.number)} x={-16} y={-8} width={32} align="center" fontStyle="bold" fontSize={16} fill="#0b0e14" listening={false} />
-                <Text text={status === 'live' ? 'LIVE' : status === 'preview' ? 'NEXT' : cam.name} x={-40} y={20} width={80} align="center" fontStyle={emphasis ? 'bold' : 'normal'} fontSize={12} fill={col} listening={false} />
+                {(() => {
+                  const st = ptz[cam.id] // absent for fixed cameras, and for a PTZ camera that can't be reached
+                  // every preset known on this camera, plus the one it reports now even if it isn't listed yet
+                  const slots = st ? [...new Set([...(cam.slots ?? []), ...(st.preset > 0 ? [st.preset] : [])])].sort((a, b) => a - b) : []
+                  // the presets, stacked in a column beside the camera circle
+                  const placed = placeInColumns(slots.map((n) => ({ n, label: `P${n}`, w: 14 + 8 * `P${n}`.length })))
+                  const tap = (n: number) => (e: { cancelBubble: boolean }) => { e.cancelBubble = true; onPresetChip(cam.id, n) }
+                  const hasLive = !!cam.ip && IPV4.test(cam.ip)
+                  const openLive = (e: { cancelBubble: boolean }) => { e.cancelBubble = true; onLiveIcon(cam.id) }
+                  return (
+                    <>
+                      {st && placed.map((c) => {
+                        const cur = c.n === st.preset
+                        const look = cur ? CURRENT[st.status] : OTHER
+                        return (
+                          <Group key={c.n} x={c.x - c.w / 2} y={c.y - CHIP_H / 2} onClick={tap(c.n)} onTap={tap(c.n)}>
+                            <Rect width={c.w} height={CHIP_H} cornerRadius={CHIP_H / 2} fill={look.fill} stroke={look.stroke} strokeWidth={cur ? 2.5 : 1.5}
+                              dash={cur && st.status === 'moved' ? [4, 3] : undefined} />
+                            <Text text={c.label + (cur && st.status === 'unknown' ? '?' : '')} width={c.w} y={5} align="center" fontStyle="bold" fontSize={12} fill={look.text} listening={false} />
+                          </Group>
+                        )
+                      })}
+                      {/* live view badge on the circle's lower left: opens a small floating live picture */}
+                      {hasLive && (
+                        <Group x={-12} y={12} onClick={openLive} onTap={openLive}>
+                          <Circle radius={9} fill="#1d4ed8" stroke="#bfdbfe" strokeWidth={1.5} />
+                          <Rect x={-5.5} y={-3.5} width={7} height={7} cornerRadius={1.5} fill="#fff" listening={false} />
+                          <Line points={[2.5, -1.5, 6, -3.5, 6, 3.5, 2.5, 1.5]} closed fill="#fff" listening={false} />
+                        </Group>
+                      )}
+                      <Text text={status === 'live' ? 'LIVE' : status === 'preview' ? 'NEXT' : cam.name} x={-40} y={20} width={80} align="center" fontStyle={emphasis ? 'bold' : 'normal'} fontSize={12} fill={col} listening={false} />
+                    </>
+                  )
+                })()}
               </Group>
             </Group>
           )
@@ -198,8 +367,9 @@ export default function StageView({ show, live, width, height, selectedId, selec
               return (
                 <Rect key={edge} x={pos.x} y={pos.y} width={12} height={12} offsetX={6} offsetY={6} fill="#fff" stroke="#5b8def" strokeWidth={2} draggable
                   onDragMove={(e) => {
-                    const w = edge === 's' ? selectedPlatform.w : Math.max(0.5, Math.round((e.target.x() / s) * 10) / 10)
-                    const h = edge === 'e' ? selectedPlatform.h : Math.max(0.5, Math.round((e.target.y() / s) * 10) / 10)
+                    // sizes snap to half a foot, never smaller than one foot
+                    const w = edge === 's' ? selectedPlatform.w : Math.max(1, Math.round((e.target.x() / s) * 2) / 2)
+                    const h = edge === 'e' ? selectedPlatform.h : Math.max(1, Math.round((e.target.y() / s) * 2) / 2)
                     e.target.position(place(w, h)) // keep the handle on the snapped/clamped edge
                     onItemResize(selectedPlatform.id, w, h)
                   }} />

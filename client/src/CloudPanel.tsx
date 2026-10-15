@@ -22,7 +22,8 @@ export default function CloudPanel({ cloud, onShows }: { cloud: Cloud; onShows: 
               ? <>autosaving to the cloud · <b className={status === 'saving' ? '' : 'ok'}>{status === 'saving' ? 'saving…' : 'saved ✓'}</b></>
               : 'this show is not in the cloud yet'}
           </p>
-          <button onClick={cloud.saveNew}>{cloudId ? 'Save a copy to the cloud' : 'Save to cloud'}</button>
+          {/* a show that is already in the cloud autosaves; only one that isn't yet needs this */}
+          {!cloudId && <button onClick={cloud.saveNew}>Save to cloud</button>}
         </>
       )}
 

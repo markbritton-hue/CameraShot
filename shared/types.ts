@@ -17,11 +17,16 @@ export interface Camera {
   ip?: string
   /** a PTZ camera: unlocks pan/tilt/zoom and the image controls (VISCA). Off for fixed cameras. */
   ptz?: boolean
+  /**
+   * The camera's own memory preset numbers that are known to be programmed. VISCA can't list them, so this is
+   * built from slots saved through CameraShot, slots the camera has been seen going to, and ones added by hand.
+   */
+  slots?: number[]
   /** UDP port for VISCA over IP; 1259 for most cameras (AVKANS / PTZOptics style) */
   viscaPort?: number
   /** RTSP path for the live view, e.g. "/2" (the lower-resolution stream on most AVKANS cameras) */
   rtspPath?: string
-  /** position on stage, metres */
+  /** position on stage, feet */
   x: number
   y: number
   /** horizontal field of view, degrees */
@@ -31,7 +36,7 @@ export interface Camera {
   presets: CameraPreset[]
 }
 
-/** A named spot on a platform that cameras can aim at. Coordinates are metres from the item's top-left, before rotation. */
+/** A named spot on a platform that cameras can aim at. Coordinates are feet from the item's top-left, before rotation. */
 export interface ItemPoint {
   id: string
   label: string
@@ -45,7 +50,7 @@ export interface StageItem {
   label: string
   /** stairs only: number of steps (default 3); they rise towards the top of the plan, i.e. upstage */
   steps?: number
-  /** platform: top-left corner. person: centre. metres */
+  /** platform: top-left corner. person: centre. feet */
   x: number
   y: number
   w: number
@@ -53,13 +58,18 @@ export interface StageItem {
   rotation: number
   /** only used by platforms */
   points: ItemPoint[]
+  /** platforms only: fill colour as #rrggbb; absent means the default steel grey */
+  color?: string
 }
 
 export interface Show {
   name: string
   /** ms timestamp of the last edit; whichever copy (browser or server) is newer wins on reconnect */
   updatedAt: number
-  stage: { width: number; depth: number }
+  /** every length in the show (stage, items, cameras, focus areas) is in this unit; older shows were metres and are converted on load */
+  units?: 'ft'
+  /** width and depth of the stage in feet, and the size of one grid square in feet (default 2) */
+  stage: { width: number; depth: number; grid?: number }
   items: StageItem[]
   cameras: Camera[]
   settings: {
@@ -114,24 +124,58 @@ export interface AtemStatus {
   error?: string
 }
 
+/** What a PTZ camera is doing right now, as watched by the server: its last recalled preset and whether it is still there. */
+export interface PtzCameraState {
+  preset: number
+  status: 'unknown' | 'moving' | 'on' | 'moved'
+}
+
+/** keyed by camera id; cameras that are not PTZ, or can't be reached, are absent */
+export type PtzStates = Record<string, PtzCameraState>
+
 export type ServerMessage =
-  | { type: 'hello'; show: Show; live: LiveState; atem: AtemStatus }
+  | { type: 'hello'; show: Show; live: LiveState; atem: AtemStatus; ptz: PtzStates }
   | { type: 'show'; show: Show }
   | { type: 'live'; live: LiveState }
   | { type: 'atem'; atem: AtemStatus }
+  | { type: 'ptz'; ptz: PtzStates }
 
 export const IPV4 = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/
 
-/** Fill in fields added after a show was first saved. */
-export function normalizeShow(s: Show): Show {
+export const DEFAULT_GRID_FT = 2
+const FT_PER_M = 3.28084
+const toFt = (v: number) => Math.round(v * FT_PER_M * 100) / 100
+
+/** Shows saved before feet were the unit were drawn in metres: convert every length once and mark the show as feet. */
+function metresToFeet(s: Show): Show {
+  const focus = (f: { x: number; y: number; radius: number }) => ({ x: toFt(f.x), y: toFt(f.y), radius: toFt(f.radius) })
   return {
+    ...s,
+    units: 'ft',
+    stage: { ...s.stage, width: toFt(s.stage.width), depth: toFt(s.stage.depth) },
+    items: s.items.map((i) => ({
+      ...i, x: toFt(i.x), y: toFt(i.y), w: toFt(i.w), h: toFt(i.h),
+      points: i.points.map((p) => ({ ...p, x: toFt(p.x), y: toFt(p.y) })),
+    })),
+    cameras: s.cameras.map((c) => ({
+      ...c, x: toFt(c.x), y: toFt(c.y), focus: focus(c.focus),
+      presets: c.presets.map((p) => ({ ...p, focus: focus(p.focus) })),
+    })),
+  }
+}
+
+/** Fill in fields added after a show was first saved, and bring older shows (metres) up to feet. Safe to run repeatedly. */
+export function normalizeShow(s: Show): Show {
+  const n: Show = {
     ...s,
     updatedAt: s.updatedAt ?? 0,
     settings: { ...s.settings, atemIp: s.settings.atemIp ?? '' },
     items: s.items.map((i) => ({ ...i, kind: i.kind ?? 'platform', points: i.points ?? [] })),
     // shows saved before the PTZ checkbox existed: a camera that already has an IP was being controlled, so keep it PTZ
-    cameras: s.cameras.map((c) => ({ ...c, presets: c.presets ?? [], ptz: c.ptz ?? Boolean(c.ip) })),
+    cameras: s.cameras.map((c) => ({ ...c, presets: c.presets ?? [], ptz: c.ptz ?? Boolean(c.ip), slots: c.slots ?? [] })),
   }
+  const out = n.units === 'ft' ? n : metresToFeet(n)
+  return { ...out, stage: { ...out.stage, grid: out.stage.grid ?? DEFAULT_GRID_FT } }
 }
 
 /** Stage-space position of a point on a (possibly rotated) platform. Items rotate about their centre. */
@@ -157,21 +201,22 @@ export function aimTargets(items: StageItem[]): { key: string; label: string; x:
 export const defaultShow: Show = {
   name: 'New Show',
   updatedAt: 0,
-  stage: { width: 12, depth: 8 },
+  units: 'ft',
+  stage: { width: 40, depth: 24, grid: DEFAULT_GRID_FT },
   items: [
     {
-      id: 'i1', kind: 'platform', label: 'Riser', x: 4, y: 1, w: 4, h: 2, rotation: 0,
+      id: 'i1', kind: 'platform', label: 'Riser', x: 14, y: 4, w: 12, h: 6, rotation: 0,
       points: [
-        { id: 'p1', label: 'Left', x: 1, y: 1 },
-        { id: 'p2', label: 'Right', x: 3, y: 1 },
+        { id: 'p1', label: 'Left', x: 3, y: 3 },
+        { id: 'p2', label: 'Right', x: 9, y: 3 },
       ],
     },
-    { id: 'i2', kind: 'person', label: 'Speaker', x: 6, y: 4.5, w: 0.6, h: 0.6, rotation: 0, points: [] },
+    { id: 'i2', kind: 'person', label: 'Speaker', x: 20, y: 14, w: 2, h: 2, rotation: 0, points: [] },
   ],
   cameras: [
-    { id: 'c1', number: 1, name: 'Wide', color: '#38bdf8', atemInput: 1, x: 6, y: 7.5, fov: 60, focus: { x: 6, y: 3, radius: 2.5 }, presets: [] },
-    { id: 'c2', number: 2, name: 'Left', color: '#a78bfa', atemInput: 2, x: 1, y: 6, fov: 35, focus: { x: 5, y: 2, radius: 1.2 }, presets: [] },
-    { id: 'c3', number: 3, name: 'Right', color: '#fbbf24', atemInput: 3, x: 11, y: 6, fov: 35, focus: { x: 7, y: 2, radius: 1.2 }, presets: [] },
+    { id: 'c1', number: 1, name: 'Wide', color: '#38bdf8', atemInput: 1, x: 20, y: 23, fov: 60, focus: { x: 20, y: 9, radius: 8 }, presets: [] },
+    { id: 'c2', number: 2, name: 'Left', color: '#a78bfa', atemInput: 2, x: 3, y: 18, fov: 35, focus: { x: 16, y: 6, radius: 4 }, presets: [] },
+    { id: 'c3', number: 3, name: 'Right', color: '#fbbf24', atemInput: 3, x: 37, y: 18, fov: 35, focus: { x: 23, y: 6, radius: 4 }, presets: [] },
   ],
   settings: { atemIp: '', me: 1, companionHost: '127.0.0.1', companionPort: 8000 },
 }

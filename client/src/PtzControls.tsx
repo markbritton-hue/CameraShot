@@ -11,6 +11,8 @@ interface Props {
   onRtspPath: (path: string | undefined) => void
   /** false when the caller already shows the live picture (the camera viewer window) */
   showLive?: boolean
+  /** tighter spacing, for the narrow column beside the pan/tilt pad */
+  compact?: boolean
 }
 
 interface VideoStatus { state: 'missing' | 'off' | 'starting' | 'ready' | 'error'; port: number; streams: string[]; error?: string }
@@ -19,14 +21,16 @@ const DEFAULT_RTSP_PATH = '/2'
 // go2rtc only listens on this PC, so the picture can only be shown on the screen CameraShot runs on
 const ON_THIS_PC = ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname)
 
-/** Live picture from the camera: go2rtc turns its RTSP stream into something the browser can play. */
-export function LiveView({ camNumber, rtspPath, onRtspPath }: Pick<Props, 'camNumber' | 'rtspPath' | 'onRtspPath'>) {
+/**
+ * The picture itself (or a message explaining why there isn't one). go2rtc turns the camera's RTSP stream into
+ * something the browser can play. `fill` makes it fill its container (the floating window) instead of keeping 16:9.
+ */
+export function LiveFrame({ camNumber, rtspPath, fill = false }: { camNumber: number; rtspPath: string | undefined; fill?: boolean }) {
   const [video, setVideo] = useState<VideoStatus | null>(null)
-  const [open, setOpen] = useState(true)
   const stream = `cam${camNumber}`
 
   useEffect(() => {
-    if (!open || !ON_THIS_PC) return
+    if (!ON_THIS_PC) return
     let stop = false
     let timer: number | undefined
     const poll = async () => {
@@ -42,23 +46,26 @@ export function LiveView({ camNumber, rtspPath, onRtspPath }: Pick<Props, 'camNu
     }
     void poll()
     return () => { stop = true; window.clearTimeout(timer) }
-  }, [open, stream, rtspPath])
+  }, [stream, rtspPath])
 
-  let body: React.ReactNode
-  if (!ON_THIS_PC) body = <p className="hint">Live view only works on the PC running CameraShot. Open it there at http://localhost:5173.</p>
-  else if (!video) body = <p className="hint">Checking…</p>
-  else if (video.state === 'missing') body = <p className="hint bad">The video helper isn't installed (tools/go2rtc/go2rtc.exe).</p>
-  else if (video.state === 'error') body = <p className="hint bad">{video.error ?? 'The video helper stopped.'} It restarts by itself.</p>
-  else if (video.state !== 'ready' || !video.streams.includes(stream)) body = <p className="hint">Starting the video…</p>
-  else {
-    body = (
-      <div className="live-frame">
-        {/* key forces a fresh connection when the stream path changes */}
-        <iframe key={`${stream}-${rtspPath ?? ''}`} title={`Camera ${camNumber} live view`} allow="autoplay"
-          src={`http://127.0.0.1:${video.port}/stream.html?src=${stream}&mode=mse`} />
-      </div>
-    )
-  }
+  const msg = (text: string, bad = false) => <p className={`hint${bad ? ' bad' : ''}${fill ? ' live-msg' : ''}`}>{text}</p>
+  if (!ON_THIS_PC) return msg('Live view only works on the PC running CameraShot. Open it there at http://localhost:5173.')
+  if (!video) return msg('Checking…')
+  if (video.state === 'missing') return msg("The video helper isn't installed (tools/go2rtc/go2rtc.exe).", true)
+  if (video.state === 'error') return msg(`${video.error ?? 'The video helper stopped.'} It restarts by itself.`, true)
+  if (video.state !== 'ready' || !video.streams.includes(stream)) return msg('Starting the video…')
+  return (
+    <div className={`live-frame${fill ? ' fill' : ''}`}>
+      {/* key forces a fresh connection when the stream path changes */}
+      <iframe key={`${stream}-${rtspPath ?? ''}`} title={`Camera ${camNumber} live view`} allow="autoplay"
+        src={`http://127.0.0.1:${video.port}/stream.html?src=${stream}&mode=mse`} />
+    </div>
+  )
+}
+
+/** Live picture with a hide button and the RTSP path box, for the setup page and the camera window. */
+export function LiveView({ camNumber, rtspPath, onRtspPath }: Pick<Props, 'camNumber' | 'rtspPath' | 'onRtspPath'>) {
+  const [open, setOpen] = useState(true)
 
   return (
     <div className="live">
@@ -70,7 +77,7 @@ export function LiveView({ camNumber, rtspPath, onRtspPath }: Pick<Props, 'camNu
             onChange={(e) => { const v = e.target.value.trim(); onRtspPath(v && v !== DEFAULT_RTSP_PATH ? v : undefined) }} />
         </label>
       </div>
-      {open && body}
+      {open && <LiveFrame camNumber={camNumber} rtspPath={rtspPath} />}
     </div>
   )
 }
@@ -86,7 +93,7 @@ type SliderKey = 'gain' | 'redGain' | 'blueGain' | 'expCompLevel' | 'saturation'
 const hex = (n: number) => `0x${n.toString(16).toUpperCase().padStart(2, '0')}`
 
 /** Exposure, white balance and colour for one PTZ camera, read from and sent to the camera over VISCA. */
-export default function PtzControls({ host, port, onPort, camNumber, rtspPath, onRtspPath, showLive = true }: Props) {
+export default function PtzControls({ host, port, onPort, camNumber, rtspPath, onRtspPath, showLive = true, compact = false }: Props) {
   const [status, setStatus] = useState<PtzStatus | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -150,8 +157,8 @@ export default function PtzControls({ host, port, onPort, camNumber, rtspPath, o
   )
 
   return (
-    <div className="ptz">
-      {showLive && <LiveView camNumber={camNumber} rtspPath={rtspPath} onRtspPath={onRtspPath} />}
+    <div className={`ptz${compact ? ' compact' : ''}`}>
+      {showLive &&<LiveView camNumber={camNumber} rtspPath={rtspPath} onRtspPath={onRtspPath} />}
       <div className="ptz-bar">
         <button onClick={() => void load()} disabled={busy}>{busy ? 'Working…' : 'Read from camera'}</button>
         <label className="ptz-port">VISCA port

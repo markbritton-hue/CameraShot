@@ -8,8 +8,9 @@ import { execFile } from 'node:child_process'
 import { defaultShow, IPV4, normalizeShow } from '../../shared/types'
 import type { LiveState, ServerMessage, Show } from '../../shared/types'
 import { createAtemLink } from './atem'
-import { applySetting, drive, readStatus } from './visca'
+import { applySetting, drive, readPosition, readStatus } from './visca'
 import { createVideo } from './video'
+import { createPtzWatcher } from './ptzWatch'
 import type { PtzSetting } from '../../shared/types'
 import { DEFAULT_VISCA_PORT } from '../../shared/types'
 
@@ -73,8 +74,46 @@ const video = createVideo({
   port: Number(process.env.GO2RTC_PORT ?? 1984),
 })
 void video.sync(show.cameras)
+/**
+ * Camera memory preset N and stage-plan preset N are the same number. When a PTZ camera is sent to
+ * preset N (from this app, Companion, or a joystick), the plan follows: the cone takes the aim and
+ * zoom saved in stage preset N, if there is one.
+ */
+function applyStagePreset(cameraId: string, n: number) {
+  const cam = show.cameras.find((c) => c.id === cameraId)
+  const sp = cam?.presets[n - 1]
+  if (!cam || !sp) return
+  const same = cam.fov === sp.fov && cam.focus.x === sp.focus.x && cam.focus.y === sp.focus.y && cam.focus.radius === sp.focus.radius
+  if (same) return
+  cam.fov = sp.fov
+  cam.focus = { ...sp.focus }
+  show.updatedAt = Date.now()
+  saveShow(show)
+  broadcast({ type: 'show', show })
+}
+
+/** Remember that preset slot n is programmed on this camera (see Camera.slots). Slot 0 means "none recalled yet" on most cameras. */
+function addSlot(cameraId: string, n: number) {
+  const cam = show.cameras.find((c) => c.id === cameraId)
+  if (!cam || !Number.isInteger(n) || n < 1 || n > 127) return
+  const slots = cam.slots ?? []
+  if (slots.includes(n)) return
+  cam.slots = [...slots, n].sort((a, b) => a - b)
+  show.updatedAt = Date.now()
+  saveShow(show)
+  broadcast({ type: 'show', show })
+}
+
+const ptzWatch = createPtzWatcher({
+  cameras: () => show.cameras,
+  onStates: (ptz) => broadcast({ type: 'ptz', ptz }),
+  onExternalRecall: applyStagePreset,
+  onPresetSeen: addSlot,
+  intervalMs: Number(process.env.PTZ_POLL_MS ?? 1000),
+})
+
 // stop go2rtc with the server (a hard kill can't run this; the next start cleans up any leftover)
-process.on('exit', () => video.stop())
+process.on('exit', () => { video.stop(); ptzWatch.stop() })
 for (const sig of ['SIGINT', 'SIGTERM'] as const) process.on(sig, () => process.exit(0))
 
 const app = Fastify({ logger: { level: 'info' } })
@@ -96,7 +135,7 @@ app.get('/ws', { websocket: true }, (socket, req) => {
   const cid = new URL(req.url, 'http://x').searchParams.get('cid') ?? crypto.randomUUID()
   clients.set(cid, socket)
   socket.on('close', () => clients.delete(cid))
-  socket.send(JSON.stringify({ type: 'hello', show, live, atem: atemLink.status() } satisfies ServerMessage))
+  socket.send(JSON.stringify({ type: 'hello', show, live, atem: atemLink.status(), ptz: ptzWatch.states() } satisfies ServerMessage))
 })
 
 app.get('/api/show', async () => show)
@@ -180,7 +219,7 @@ for (const which of ['program', 'preview'] as const) {
  */
 const ptzTarget = (host: string | undefined) => {
   const cam = show.cameras.find((c) => c.ptz && c.ip && c.ip === host)
-  return cam ? { host: cam.ip as string, port: cam.viscaPort ?? DEFAULT_VISCA_PORT } : null
+  return cam ? { id: cam.id, host: cam.ip as string, port: cam.viscaPort ?? DEFAULT_VISCA_PORT } : null
 }
 const SETTINGS: PtzSetting[] = ['exposureMode', 'gain', 'wbMode', 'redGain', 'blueGain', 'onePush', 'blc', 'expComp', 'expCompLevel', 'saturation', 'hue']
 const NOT_CONFIGURED = 'that IP is not a PTZ camera in this show. Tick PTZ and enter its IP in Setup, then wait a moment for it to save.'
@@ -190,6 +229,17 @@ app.get<{ Querystring: { host?: string } }>('/api/ptz/status', async (req, reply
   if (!t) return reply.code(404).send({ ok: false, error: NOT_CONFIGURED })
   try {
     return { ok: true, status: await readStatus(t.host, t.port) }
+  } catch (e) {
+    return reply.code(502).send({ ok: false, error: e instanceof Error ? e.message : String(e) })
+  }
+})
+
+/** Current preset number and pan/tilt/zoom position, polled by the camera window. */
+app.get<{ Querystring: { host?: string } }>('/api/ptz/position', async (req, reply) => {
+  const t = ptzTarget(req.query.host)
+  if (!t) return reply.code(404).send({ ok: false, error: NOT_CONFIGURED })
+  try {
+    return { ok: true, position: await readPosition(t.host, t.port) }
   } catch (e) {
     return reply.code(502).send({ ok: false, error: e instanceof Error ? e.message : String(e) })
   }
@@ -240,7 +290,11 @@ app.post<{ Body: { host?: string; action?: string; dir?: string; speed?: number;
       case 'stop': clearTimeout(moveWatchdogs.get(`${t.host}:${t.port}`)); await drive.stop(t.host, t.port); break
       case 'home': await drive.home(t.host, t.port); break
       case 'recall':
-      case 'store': await drive.preset(t.host, t.port, action, n); break
+      case 'store':
+        await drive.preset(t.host, t.port, action, n)
+        if (action === 'recall') { ptzWatch.noteRecall(t.id); applyStagePreset(t.id, Number(n)) }
+        else addSlot(t.id, Number(n)) // saved here, so it is certainly programmed
+        break
       default: return reply.code(400).send({ ok: false, error: 'action must be move, zoom, stop, home, recall or store' })
     }
     return { ok: true }
@@ -251,7 +305,9 @@ app.post<{ Body: { host?: string; action?: string; dir?: string; speed?: number;
 
 /**
  * Recall a camera preset, like a PTZ memory button.
- *   /api/camera/2/preset/3  -> camera number 2 moves to its 3rd saved preset
+ *   /api/camera/2/preset/3  -> camera number 2 goes to preset 3
+ * For a PTZ camera that is the camera's own memory preset 3 (it physically moves) plus stage-plan preset 3
+ * if one exists (the cone follows). For any other camera it is the stage-plan preset only.
  * GET and POST both work so a Companion button can call it directly.
  */
 const recallPreset = async (
@@ -260,14 +316,27 @@ const recallPreset = async (
 ) => {
   const cam = show.cameras.find((c) => c.number === Number(req.params.number))
   if (!cam) return reply.code(404).send({ error: `no camera ${req.params.number}` })
-  const preset = cam.presets[Number(req.params.index) - 1]
-  if (!preset) return reply.code(404).send({ error: `camera ${cam.number} has no preset ${req.params.index}` })
-  cam.fov = preset.fov
-  cam.focus = { ...preset.focus }
-  show.updatedAt = Date.now()
-  saveShow(show)
-  broadcast({ type: 'show', show })
-  return { ok: true, camera: cam.number, preset: preset.name }
+  const n = Number(req.params.index)
+  const preset = cam.presets[n - 1]
+  const physical = cam.ptz === true && !!cam.ip && IPV4.test(cam.ip)
+  if (!preset && !physical) return reply.code(404).send({ error: `camera ${cam.number} has no preset ${req.params.index}` })
+  if (physical) {
+    try {
+      await drive.preset(cam.ip as string, cam.viscaPort ?? DEFAULT_VISCA_PORT, 'recall', n)
+      ptzWatch.noteRecall(cam.id)
+    } catch (e) {
+      const bad = e instanceof RangeError
+      return reply.code(bad ? 400 : 502).send({ ok: false, error: e instanceof Error ? e.message : String(e) })
+    }
+  }
+  if (preset) {
+    cam.fov = preset.fov
+    cam.focus = { ...preset.focus }
+    show.updatedAt = Date.now()
+    saveShow(show)
+    broadcast({ type: 'show', show })
+  }
+  return { ok: true, camera: cam.number, preset: preset?.name ?? `preset ${n}`, moved: physical }
 }
 app.get('/api/camera/:number/preset/:index', recallPreset as never)
 app.post('/api/camera/:number/preset/:index', recallPreset as never)
