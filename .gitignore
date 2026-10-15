@@ -1,0 +1,17 @@
+node_modules/
+client/dist/
+*.tmp
+*.log
+
+# runtime show data and backups (your layouts live here)
+data/
+
+# secrets
+.env
+.env.local
+.env.*.local
+secrets.*
+config.local.*
+
+# session handoffs / personal notes
+docs/handoffs/
