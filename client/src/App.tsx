@@ -173,14 +173,21 @@ export default function App() {
     setScreen('editor')
   }
 
+  // While the ATEM simulator is ON the grid is locked, so nothing gets moved, resized, added or deleted by accident
+  // during a demo. Switch the simulator OFF (the default) and the grid is editable. Cameras can always be picked,
+  // opened, moved with the pad, and sent to presets.
+  const locked = show.settings.simulator === true
+
   const selectCamera = useCallback((id: string | null) => {
     setSelectedId(id)
     if (id !== null) setSelectedItemId(null)
   }, [])
   const selectItem = useCallback((id: string | null) => {
+    if (locked && id !== null) return // locked: platforms, stairs and people can't be picked (the editor would open)
     setSelectedItemId(id)
     if (id !== null) setSelectedId(null)
-  }, [])
+  }, [locked])
+  useEffect(() => { if (locked) setSelectedItemId(null) }, [locked])
 
   const patchCamera = useCallback((id: string, patch: Partial<Camera>) =>
     update((s) => ({ ...s, cameras: s.cameras.map((c) => (c.id === id ? { ...c, ...patch } : c)) })), [update])
@@ -261,7 +268,7 @@ export default function App() {
 
   // The ATEM simulator buttons can be switched off. The choice is saved WITH THE SHOW (not in this browser), so it
   // stays off in every browser and at every address (localhost:5173, :3001, the launcher...).
-  const simOn = show.settings.simulator !== false
+  const simOn = locked // simulator on <=> grid locked
   const toggleSim = (on: boolean) => {
     update((s) => ({ ...s, settings: { ...s.settings, simulator: on } }))
     if (on) return
@@ -280,6 +287,7 @@ export default function App() {
           <span className="tag" style={{ background: PREVIEW_COLOR }}>NEXT</span>
           <b>{live.preview === null ? '—' : prevCam ? `Cam ${prevCam.number} · ${prevCam.name}` : `Input ${live.preview}`}</b>
           <span className={`conn ${connected ? 'ok' : ''}`}>{STATIC_MODE ? 'planner mode' : connected ? 'connected' : 'offline'}</span>
+          {locked && <span className="lock-tag" title="The ATEM simulator is on, so the grid is locked. Switch the simulator off to edit.">🔒 grid locked</span>}
           {display && <button onClick={() => setDisplay(false)}>Exit display (Esc)</button>}
         </div>
         {!connected && !STATIC_MODE && (
@@ -288,7 +296,7 @@ export default function App() {
           </div>
         )}
         <StageView show={show} live={live} width={size.w} height={size.h} selectedId={selectedId} selectedItemId={selectedItemId}
-          editable={!display} onSelect={selectCamera} onSelectItem={selectItem} onCameraChange={patchCamera} onCameraOpen={setViewCameraId}
+          editable={!display && !locked} onSelect={selectCamera} onSelectItem={selectItem} onCameraChange={patchCamera} onCameraOpen={setViewCameraId}
           ptz={ptz} onPresetChip={recallSlot} onLiveIcon={openLiveWin}
           onItemMove={moveItem} onItemResize={resizeItem} onItemRotate={rotateItem} onPointMove={movePoint} />
 
@@ -323,6 +331,7 @@ export default function App() {
 
           <CloudPanel cloud={cloud} onShows={() => setScreen('start')} />
 
+          <fieldset className="lockable" disabled={locked}>
           <h2>Grid size (feet)</h2>
           <div className="row">
             <label>Width <input type="number" min={4} step={1} value={show.stage.width} onChange={(e) => update((s) => ({ ...s, stage: { ...s.stage, width: +e.target.value || 4 } }))} /></label>
@@ -331,9 +340,10 @@ export default function App() {
               onChange={(e) => update((s) => ({ ...s, stage: { ...s.stage, grid: Math.max(0.5, +e.target.value || 2) } }))} /></label>
           </div>
           <p className="hint">Each square is {show.stage.grid ?? 2} ft. The brighter lines (every {5 * (show.stage.grid ?? 2)} ft) are numbered from the top-left corner. Enter the real size of your stage.</p>
+          </fieldset>
           </>)}
 
-          <h2>Cameras <button onClick={addCamera}>+ Add</button></h2>
+          <h2>Cameras <button onClick={addCamera} disabled={locked}>+ Add</button></h2>
           <ul className="cams">
             {show.cameras.map((c) => (
               <li key={c.id} className={c.id === selectedId ? 'sel' : ''} onClick={() => selectCamera(c.id)}>
@@ -388,11 +398,12 @@ export default function App() {
               ))}
               {selected.presets.length > 0 && <p className="hint">Companion: <code>POST /api/camera/{selected.number}/preset/&lt;n&gt;</code></p>}
 
-              <button className="danger" onClick={() => { update((s) => ({ ...s, cameras: s.cameras.filter((c) => c.id !== selected.id) })); setSelectedId(null) }}>Delete camera</button>
+              <button className="danger" disabled={locked} title={locked ? 'Locked while the simulator is on' : undefined} onClick={() => { update((s) => ({ ...s, cameras: s.cameras.filter((c) => c.id !== selected.id) })); setSelectedId(null) }}>Delete camera</button>
             </div>
           )}
 
-          <h2>Grid items <span><button onClick={addPlatform}>+ Platform</button> <button onClick={addStairs}>+ Stairs</button> <button onClick={addPerson}>+ Person</button></span></h2>
+          <h2>Grid items <span><button onClick={addPlatform} disabled={locked}>+ Platform</button> <button onClick={addStairs} disabled={locked}>+ Stairs</button> <button onClick={addPerson} disabled={locked}>+ Person</button></span></h2>
+          {locked && <p className="hint lock-hint">🔒 The grid is locked while the ATEM simulator is on. Switch the simulator off (at the bottom of this panel) to edit the layout.</p>}
           <ul className="cams">
             {show.items.map((it) => (
               <li key={it.id} className={it.id === selectedItemId ? 'sel' : ''} onClick={() => selectItem(it.id)}>

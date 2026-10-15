@@ -77,7 +77,10 @@ export interface Show {
     atemIp: string
     /** which ATEM M/E's program/preview we follow (Extreme ISO has 2) */
     me: number
-    /** show the ATEM simulator buttons in the sidebar (default on). Saved with the show so it stays off in every browser. */
+    /**
+     * ATEM simulator on (true) or off (false/absent, the default). While it is on the simulator buttons show and the
+     * grid is locked against edits; off means the grid is editable. Saved with the show so it is the same in every browser.
+     */
     simulator?: boolean
     companionHost: string
     companionPort: number
