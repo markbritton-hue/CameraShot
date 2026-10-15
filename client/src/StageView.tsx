@@ -1,8 +1,15 @@
-import { Circle, Ellipse, Group, Layer, Line, Rect, Stage, Text, Wedge } from 'react-konva'
+import { Arrow, Circle, Ellipse, Group, Layer, Line, Rect, Stage, Text, Wedge } from 'react-konva'
 import type { Camera, LiveState, Show } from '../../shared/types'
 
 export const LIVE_COLOR = '#ef4444'
 export const PREVIEW_COLOR = '#22c55e'
+
+/** Higher steps are drawn lighter, so the rise reads at a glance from above. */
+function stepColor(level: number, steps: number) {
+  const t = steps > 1 ? (level - 1) / (steps - 1) : 0
+  const lo = [43, 52, 71], hi = [104, 122, 158]
+  return `rgb(${lo.map((c, i) => Math.round(c + (hi[i] - c) * t)).join(',')})`
+}
 
 interface Props {
   show: Show
@@ -28,7 +35,7 @@ export default function StageView({ show, live, width, height, selectedId, selec
   const ox = (width - stage.width * s) / 2
   const oy = (height - stage.depth * s) / 2
   const anyLive = live.program !== null || live.preview !== null
-  const selectedPlatform = show.items.find((i) => i.id === selectedItemId && i.kind === 'platform') ?? null
+  const selectedPlatform = show.items.find((i) => i.id === selectedItemId && i.kind !== 'person') ?? null
 
   const gridLines = []
   for (let x = 0; x <= stage.width; x++) gridLines.push(<Line key={`gx${x}`} points={[x * s, 0, x * s, stage.depth * s]} stroke="#2a3140" strokeWidth={1} listening={false} />)
@@ -68,8 +75,27 @@ export default function StageView({ show, live, width, height, selectedId, selec
           return (
             <Group key={it.id} x={it.x * s} y={it.y * s} rotation={it.rotation} draggable={editable} onDragMove={dragItem}
               onMouseDown={() => { onSelect(null); onSelectItem(it.id) }}>
-              <Rect width={it.w * s} height={it.h * s} fill="#2b3447" stroke={picked ? '#fff' : '#5b6780'} strokeWidth={picked ? 2 : 1} />
-              <Text text={it.label} width={it.w * s} height={it.h * s} align="center" verticalAlign="middle" fill="#b6c0d4" fontSize={13} listening={false} />
+              {it.kind === 'stairs' ? (() => {
+                const n = Math.max(2, Math.min(8, it.steps ?? 3))
+                const treadH = (it.h * s) / n
+                return (
+                  <>
+                    {/* top of the plan is the highest step */}
+                    {Array.from({ length: n }, (_, i) => (
+                      <Rect key={i} y={i * treadH} width={it.w * s} height={treadH} fill={stepColor(n - i, n)} stroke="#0b0e14" strokeWidth={1} />
+                    ))}
+                    <Rect width={it.w * s} height={it.h * s} stroke={picked ? '#fff' : '#7d8cab'} strokeWidth={picked ? 2 : 1.5} listening={false} />
+                    <Arrow points={[it.w * s * 0.14, it.h * s * 0.88, it.w * s * 0.14, it.h * s * 0.12]} stroke="#e6ecf8" fill="#e6ecf8" strokeWidth={2}
+                      pointerLength={7} pointerWidth={8} opacity={0.75} listening={false} />
+                    <Text text={it.label} x={it.w * s * 0.2} width={it.w * s * 0.8} height={it.h * s} align="center" verticalAlign="middle" fill="#f0f4fc" fontSize={13} listening={false} />
+                  </>
+                )
+              })() : (
+                <>
+                  <Rect width={it.w * s} height={it.h * s} fill="#2b3447" stroke={picked ? '#fff' : '#5b6780'} strokeWidth={picked ? 2 : 1} />
+                  <Text text={it.label} width={it.w * s} height={it.h * s} align="center" verticalAlign="middle" fill="#b6c0d4" fontSize={13} listening={false} />
+                </>
+              )}
               {/* plain markers; once the platform is selected its editable points move to the top layer below */}
               {!picked && it.points.map((p) => (
                 <Circle key={p.id} x={p.x * s} y={p.y * s} radius={5} fill="#fde047" stroke="#0b0e14" strokeWidth={1.5} listening={false} />

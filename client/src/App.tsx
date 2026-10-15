@@ -186,6 +186,11 @@ export default function App() {
     update((s) => ({ ...s, items: [...s.items, it] }))
     selectItem(it.id)
   }
+  const addStairs = () => {
+    const it: StageItem = { id: crypto.randomUUID(), kind: 'stairs', label: 'Stairs', steps: 3, x: 1, y: 1, w: 2, h: 1.5, rotation: 0, points: [] }
+    update((s) => ({ ...s, items: [...s.items, it] }))
+    selectItem(it.id)
+  }
   const addPerson = () => {
     const n = show.items.filter((i) => i.kind === 'person').length + 1
     const it: StageItem = { id: crypto.randomUUID(), kind: 'person', label: `Person ${n}`, x: show.stage.width / 2, y: show.stage.depth / 2, w: 0.6, h: 0.6, rotation: 0, points: [] }
@@ -315,12 +320,12 @@ export default function App() {
             </div>
           )}
 
-          <h2>Stage items <span><button onClick={addPlatform}>+ Platform</button> <button onClick={addPerson}>+ Person</button></span></h2>
+          <h2>Stage items <span><button onClick={addPlatform}>+ Platform</button> <button onClick={addStairs}>+ Stairs</button> <button onClick={addPerson}>+ Person</button></span></h2>
           <ul className="cams">
             {show.items.map((it) => (
               <li key={it.id} className={it.id === selectedItemId ? 'sel' : ''} onClick={() => selectItem(it.id)}>
-                <span>{it.kind === 'person' ? '🧍' : '▭'}</span>{it.label}
-                {it.kind === 'platform' && <small>{it.points.length} pts</small>}
+                <span>{it.kind === 'person' ? '🧍' : it.kind === 'stairs' ? '🪜' : '▭'}</span>{it.label}
+                {it.kind !== 'person' && <small>{it.points.length} pts</small>}
               </li>
             ))}
           </ul>
@@ -328,8 +333,14 @@ export default function App() {
           {selectedItem && (
             <div className="editor">
               <label>Label <input value={selectedItem.label} onChange={(e) => patchItem(selectedItem.id, { label: e.target.value })} /></label>
-              {selectedItem.kind === 'platform' && (
+              {selectedItem.kind !== 'person' && (
                 <>
+                  {selectedItem.kind === 'stairs' && (
+                    <label>Steps {selectedItem.steps ?? 3}
+                      <input type="range" min={2} max={8} value={selectedItem.steps ?? 3} onChange={(e) => patchItem(selectedItem.id, { steps: +e.target.value })} />
+                      <span className="hint">Stairs rise towards the top of the plan (upstage). Rotate to turn them.</span>
+                    </label>
+                  )}
                   <div className="row">
                     <label>Width <input type="number" step={0.5} min={0.5} value={selectedItem.w} onChange={(e) => patchItem(selectedItem.id, { w: +e.target.value || 0.5 })} /></label>
                     <label>Depth <input type="number" step={0.5} min={0.5} value={selectedItem.h} onChange={(e) => patchItem(selectedItem.id, { h: +e.target.value || 0.5 })} /></label>

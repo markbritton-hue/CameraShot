@@ -35,8 +35,10 @@ export interface ItemPoint {
 
 export interface StageItem {
   id: string
-  kind: 'platform' | 'person'
+  kind: 'platform' | 'stairs' | 'person'
   label: string
+  /** stairs only: number of steps (default 3); they rise towards the top of the plan, i.e. upstage */
+  steps?: number
   /** platform: top-left corner. person: centre. metres */
   x: number
   y: number
