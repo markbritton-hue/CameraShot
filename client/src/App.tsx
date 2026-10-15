@@ -272,10 +272,10 @@ export default function App() {
   const toggleSim = (on: boolean) => {
     update((s) => ({ ...s, settings: { ...s.settings, simulator: on } }))
     if (on) return
-    // Turning it off must also remove what the simulator left behind. With a real ATEM connected, go back to what the
-    // ATEM says; without one, clear the simulated program/preview.
-    if (STATIC_MODE || atem.state !== 'connected') { void simulate('program', 0); void simulate('preview', 0) }
-    else void fetch('/api/atem/refresh', { method: 'POST' })
+    // Switching it off clears every ATEM button back to zero: no program and no preview camera, so no highlight is left
+    // over from the simulator. (A real ATEM that is connected lights them again at its next cut.)
+    void simulate('program', 0)
+    void simulate('preview', 0)
   }
 
   return (
@@ -468,9 +468,10 @@ export default function App() {
           )}
 
           <h2>ATEM simulator
-            <label className="switch" title="Show or hide the simulator buttons">
-              <input type="checkbox" checked={simOn} onChange={(e) => toggleSim(e.target.checked)} /> {simOn ? 'On' : 'Off'}
-            </label>
+            <button className={`sim-toggle ${simOn ? 'on' : 'off'}`} onClick={() => toggleSim(!simOn)}
+              title={simOn ? 'On: the grid is locked. Click to switch off, clear the ATEM buttons and unlock the grid.' : 'Off: the grid is editable. Click to switch the simulator on.'}>
+              {simOn ? 'On' : 'Off'}
+            </button>
           </h2>
           {simOn && (
             <>
