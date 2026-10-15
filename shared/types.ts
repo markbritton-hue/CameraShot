@@ -13,6 +13,8 @@ export interface Camera {
   color: string
   /** ATEM input number this camera is plugged into (1-8 on the Extreme ISO) */
   atemInput: number
+  /** the camera's own IP address on the network (for reachability checks; later PTZ control) */
+  ip?: string
   /** position on stage, metres */
   x: number
   y: number
@@ -53,6 +55,8 @@ export interface Show {
   items: StageItem[]
   cameras: Camera[]
   settings: {
+    /** IP address of the ATEM; when set, the server reads program/preview straight from it */
+    atemIp: string
     /** which ATEM M/E's program/preview we follow (Extreme ISO has 2) */
     me: number
     companionHost: string
@@ -65,16 +69,28 @@ export interface LiveState {
   preview: number | null
 }
 
+export interface AtemStatus {
+  state: 'off' | 'connecting' | 'connected' | 'error'
+  /** e.g. "ATEM Mini Extreme ISO", read from the switcher once connected */
+  model?: string
+  mixEffects?: number
+  error?: string
+}
+
 export type ServerMessage =
-  | { type: 'hello'; show: Show; live: LiveState }
+  | { type: 'hello'; show: Show; live: LiveState; atem: AtemStatus }
   | { type: 'show'; show: Show }
   | { type: 'live'; live: LiveState }
+  | { type: 'atem'; atem: AtemStatus }
+
+export const IPV4 = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/
 
 /** Fill in fields added after a show was first saved. */
 export function normalizeShow(s: Show): Show {
   return {
     ...s,
     updatedAt: s.updatedAt ?? 0,
+    settings: { ...s.settings, atemIp: s.settings.atemIp ?? '' },
     items: s.items.map((i) => ({ ...i, kind: i.kind ?? 'platform', points: i.points ?? [] })),
     cameras: s.cameras.map((c) => ({ ...c, presets: c.presets ?? [] })),
   }
@@ -117,5 +133,5 @@ export const defaultShow: Show = {
     { id: 'c2', number: 2, name: 'Left', color: '#a78bfa', atemInput: 2, x: 1, y: 6, fov: 35, focus: { x: 5, y: 2, radius: 1.2 }, presets: [] },
     { id: 'c3', number: 3, name: 'Right', color: '#fbbf24', atemInput: 3, x: 11, y: 6, fov: 35, focus: { x: 7, y: 2, radius: 1.2 }, presets: [] },
   ],
-  settings: { me: 1, companionHost: '127.0.0.1', companionPort: 8000 },
+  settings: { atemIp: '', me: 1, companionHost: '127.0.0.1', companionPort: 8000 },
 }

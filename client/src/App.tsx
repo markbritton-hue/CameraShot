@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { aimTargets, defaultShow, normalizeShow } from '../../shared/types'
-import type { Camera, CameraPreset, LiveState, ServerMessage, Show, StageItem } from '../../shared/types'
+import type { AtemStatus, Camera, CameraPreset, LiveState, ServerMessage, Show, StageItem } from '../../shared/types'
 import StageView, { LIVE_COLOR, PREVIEW_COLOR } from './StageView'
+import Setup from './Setup'
 
 const CLIENT_ID = crypto.randomUUID()
 const COLORS = ['#38bdf8', '#a78bfa', '#fbbf24', '#f472b6', '#34d399', '#fb923c', '#60a5fa', '#c084fc']
@@ -31,6 +32,8 @@ export default function App() {
   const [synced, setSynced] = useState(true)
   const [live, setLive] = useState<LiveState>({ program: null, preview: null })
   const [connected, setConnected] = useState(false)
+  const [atem, setAtem] = useState<AtemStatus>({ state: 'off' })
+  const [setupOpen, setSetupOpen] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
   const [display, setDisplay] = useState(false)
@@ -88,6 +91,7 @@ export default function App() {
         const msg = JSON.parse(ev.data) as ServerMessage
         if (msg.type === 'hello') {
           setLive(msg.live)
+          setAtem(msg.atem)
           const server = normalizeShow(msg.show)
           syncReady.current = true
           // whichever copy was edited last wins, so offline edits are pushed up and never overwritten
@@ -97,6 +101,7 @@ export default function App() {
           const incoming = normalizeShow(msg.show)
           if (incoming.updatedAt >= showRef.current.updatedAt) adopt(incoming)
         } else if (msg.type === 'live') setLive(msg.live)
+        else if (msg.type === 'atem') setAtem(msg.atem)
       }
     }
     connect()
@@ -229,7 +234,10 @@ export default function App() {
 
       {!display && (
         <aside className="side">
-          <h1>CameraShot</h1>
+          <div className="title-row">
+            <h1>CameraShot</h1>
+            <button className="gear" title="Setup: ATEM and camera addresses" aria-label="Setup" onClick={() => setSetupOpen(true)}>⚙</button>
+          </div>
           <input className="wide" value={show.name} onChange={(e) => update((s) => ({ ...s, name: e.target.value }))} />
           <p className="hint">
             Saved in this browser ✓ · {STATIC_MODE ? 'standalone planner (no server). Use Export to keep a copy.' : connected ? (synced ? 'synced to server ✓' : 'syncing to server…') : 'server offline, will sync later'}
@@ -342,7 +350,10 @@ export default function App() {
           )}
 
           <h2>ATEM simulator</h2>
-          <p className="hint">Stands in for Companion while testing. M/E followed: <b>ME{show.settings.me}</b></p>
+          <p className="hint">
+            {atem.state === 'connected' ? <>Reading the real ATEM (ME{show.settings.me}); these buttons override it until the next cut.</> : <>For testing without the ATEM.</>}
+            {' '}Set the ATEM address under ⚙.
+          </p>
           {(['program', 'preview'] as const).map((which) => (
             <div key={which} className="sim">
               <small>{which}</small>
@@ -352,15 +363,14 @@ export default function App() {
               <button onClick={() => simulate(which, 0)}>✕</button>
             </div>
           ))}
-          <label>M/E to follow
-            <select value={show.settings.me} onChange={(e) => update((s) => ({ ...s, settings: { ...s.settings, me: +e.target.value } }))}>
-              <option value={1}>ME1</option><option value={2}>ME2</option>
-            </select>
-          </label>
           {STATIC_MODE
             ? <p className="hint">Live ATEM and Companion control needs the local CameraShot server (npm run dev).</p>
             : <p className="hint">Companion calls: <code>POST {location.origin}/api/atem/program/&lt;input&gt;?me={show.settings.me}</code></p>}
         </aside>
+      )}
+
+      {setupOpen && (
+        <Setup show={show} atem={atem} serverAvailable={connected && !STATIC_MODE} onClose={() => setSetupOpen(false)} update={update} />
       )}
     </div>
   )

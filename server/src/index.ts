@@ -4,8 +4,10 @@ import fastifyStatic from '@fastify/static'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { defaultShow, normalizeShow } from '../../shared/types'
+import { execFile } from 'node:child_process'
+import { defaultShow, IPV4, normalizeShow } from '../../shared/types'
 import type { LiveState, ServerMessage, Show } from '../../shared/types'
+import { createAtemLink } from './atem'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const root = path.resolve(__dirname, '../..')
@@ -51,6 +53,16 @@ function broadcast(msg: ServerMessage, exceptCid?: string) {
   }
 }
 
+const atemLink = createAtemLink({
+  onLive: (program, preview) => {
+    if (live.program === program && live.preview === preview) return // transitions fire many state updates
+    live = { program, preview }
+    broadcast({ type: 'live', live })
+  },
+  onStatus: (atem) => broadcast({ type: 'atem', atem }),
+})
+void atemLink.configure(show.settings.atemIp, show.settings.me)
+
 const app = Fastify({ logger: { level: 'info' } })
 await app.register(websocket)
 
@@ -66,7 +78,7 @@ app.get('/ws', { websocket: true }, (socket, req) => {
   const cid = new URL(req.url, 'http://x').searchParams.get('cid') ?? crypto.randomUUID()
   clients.set(cid, socket)
   socket.on('close', () => clients.delete(cid))
-  socket.send(JSON.stringify({ type: 'hello', show, live } satisfies ServerMessage))
+  socket.send(JSON.stringify({ type: 'hello', show, live, atem: atemLink.status() } satisfies ServerMessage))
 })
 
 app.get('/api/show', async () => show)
@@ -78,12 +90,37 @@ app.put<{ Body: Show }>('/api/show', async (req, reply) => {
   }
   show = normalizeShow(body)
   saveShow(show)
+  void atemLink.configure(show.settings.atemIp, show.settings.me)
   const cid = req.headers['x-client-id']
   broadcast({ type: 'show', show }, typeof cid === 'string' ? cid : undefined)
   return { ok: true }
 })
 
 app.get('/api/live', async () => live)
+app.get('/api/atem/status', async () => atemLink.status())
+
+/**
+ * Reachability check for the setup page: one ping to a camera or the ATEM.
+ * Only private-network IPv4 addresses are accepted, and the address is passed as an
+ * argument (no shell), so this can't be used to run commands or probe the internet.
+ */
+const PRIVATE_IP = /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|127\.)/
+app.get<{ Querystring: { host?: string } }>('/api/ping', async (req, reply) => {
+  const host = req.query.host ?? ''
+  if (!IPV4.test(host) || !PRIVATE_IP.test(host)) {
+    return reply.code(400).send({ ok: false, error: 'enter a local IPv4 address, e.g. 192.168.1.50' })
+  }
+  const win = process.platform === 'win32'
+  const args = win ? ['-n', '1', '-w', '1500', host] : ['-c', '1', '-W', '2', host]
+  return new Promise((resolve) => {
+    execFile('ping', args, { timeout: 5000 }, (err, stdout) => {
+      // Windows exits 0 even for "host unreachable" replies, so look for a real TTL reply
+      const alive = win ? /TTL=/i.test(stdout) : !err
+      const m = /time[=<]\s*(\d+(?:\.\d+)?)\s*ms/i.exec(stdout)
+      resolve({ ok: alive, ms: alive && m ? Number(m[1]) : undefined })
+    })
+  })
+})
 
 /**
  * ATEM state endpoints, called by Companion (Generic: HTTP Requests) or the in-app simulator.
