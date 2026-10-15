@@ -156,6 +156,12 @@ app.put<{ Body: Show }>('/api/show', async (req, reply) => {
 
 app.get('/api/live', async () => live)
 app.get('/api/atem/status', async () => atemLink.status())
+// forget any simulated program/preview and show what the real ATEM says (no-op when it isn't connected)
+app.post('/api/atem/refresh', async () => {
+  const before = live
+  atemLink.refresh()
+  return { ok: true, connected: atemLink.status().state === 'connected', live, changed: before !== live }
+})
 app.get('/api/video/status', async () => video.status())
 
 /**

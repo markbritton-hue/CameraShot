@@ -62,5 +62,10 @@ export function createAtemLink({ onLive, onStatus }: Options) {
     a.connect(ip).catch((e: unknown) => setStatus({ state: 'error', error: e instanceof Error ? e.message : String(e) }))
   }
 
-  return { configure, status: () => status, stop }
+  /** put the highlight back to what the real ATEM says (e.g. after the simulator has overridden it). Does nothing if not connected. */
+  function refresh() {
+    if (atem && status.state === 'connected') readLive()
+  }
+
+  return { configure, refresh, status: () => status, stop }
 }

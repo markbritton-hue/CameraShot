@@ -259,13 +259,16 @@ export default function App() {
     return fetch(`/api/atem/${which}/${input}`, { method: 'POST' })
   }
 
-  // the ATEM simulator buttons can be switched off (remembered in this browser); on a real show you don't want them around
-  const [simOn, setSimOn] = useState<boolean>(() => { try { return localStorage.getItem('camerashot.sim') !== 'off' } catch { return true } })
+  // The ATEM simulator buttons can be switched off. The choice is saved WITH THE SHOW (not in this browser), so it
+  // stays off in every browser and at every address (localhost:5173, :3001, the launcher...).
+  const simOn = show.settings.simulator !== false
   const toggleSim = (on: boolean) => {
-    setSimOn(on)
-    try { localStorage.setItem('camerashot.sim', on ? 'on' : 'off') } catch { /* storage blocked */ }
-    // turning it off also clears any highlight the simulator left behind, unless the real ATEM is what is driving it
-    if (!on && atem.state !== 'connected') { void simulate('program', 0); void simulate('preview', 0) }
+    update((s) => ({ ...s, settings: { ...s.settings, simulator: on } }))
+    if (on) return
+    // Turning it off must also remove what the simulator left behind. With a real ATEM connected, go back to what the
+    // ATEM says; without one, clear the simulated program/preview.
+    if (STATIC_MODE || atem.state !== 'connected') { void simulate('program', 0); void simulate('preview', 0) }
+    else void fetch('/api/atem/refresh', { method: 'POST' })
   }
 
   return (
