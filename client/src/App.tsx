@@ -9,7 +9,15 @@ import CameraView from './CameraView'
 import LiveWindow from './LiveWindow'
 import { useCloud } from './cloud'
 
-const CLIENT_ID = crypto.randomUUID()
+// crypto.randomUUID only exists on https or localhost, so an iPad opening http://<pc address>:3001 would crash on it
+function uid(): string {
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0
+    return (c === 'x' ? r : (r & 3) | 8).toString(16)
+  })
+}
+const CLIENT_ID = uid()
 // platform colors: the default steel gray first, then black, wood, gray, red, blue, green, gold, purple, white
 const PLATFORM_COLORS = [DEFAULT_PLATFORM_COLOR, '#111827', '#6b4f3a', '#8b8f99', '#b91c1c', '#1d4ed8', '#15803d', '#a16207', '#7e22ce', '#e5e7eb']
 const COLORS = ['#38bdf8', '#a78bfa', '#fbbf24', '#f472b6', '#34d399', '#fb923c', '#60a5fa', '#c084fc']
@@ -231,7 +239,7 @@ export default function App() {
   const addCamera = () => {
     const n = show.cameras.reduce((m, c) => Math.max(m, c.number), 0) + 1
     const cam: Camera = {
-      id: crypto.randomUUID(), number: n, name: `Cam ${n}`, color: COLORS[(n - 1) % COLORS.length], atemInput: Math.min(n, 8),
+      id: uid(), number: n, name: `Cam ${n}`, color: COLORS[(n - 1) % COLORS.length], atemInput: Math.min(n, 8),
       x: show.stage.width / 2, y: show.stage.depth - 2, fov: 40,
       focus: { x: show.stage.width / 2, y: show.stage.depth / 3, radius: 5 }, presets: [],
     }
@@ -239,26 +247,26 @@ export default function App() {
     selectCamera(cam.id)
   }
   const addPlatform = () => {
-    const it: StageItem = { id: crypto.randomUUID(), kind: 'platform', label: 'Platform', x: 4, y: 4, w: 8, h: 4, rotation: 0, points: [] }
+    const it: StageItem = { id: uid(), kind: 'platform', label: 'Platform', x: 4, y: 4, w: 8, h: 4, rotation: 0, points: [] }
     update((s) => ({ ...s, items: [...s.items, it] }))
     selectItem(it.id)
   }
   const addStairs = () => {
-    const it: StageItem = { id: crypto.randomUUID(), kind: 'stairs', label: 'Stairs', steps: 3, x: 4, y: 4, w: 6, h: 3, rotation: 0, points: [] }
+    const it: StageItem = { id: uid(), kind: 'stairs', label: 'Stairs', steps: 3, x: 4, y: 4, w: 6, h: 3, rotation: 0, points: [] }
     update((s) => ({ ...s, items: [...s.items, it] }))
     selectItem(it.id)
   }
   const addPerson = () => {
     const n = show.items.filter((i) => i.kind === 'person').length + 1
-    const it: StageItem = { id: crypto.randomUUID(), kind: 'person', label: `Person ${n}`, x: show.stage.width / 2, y: show.stage.depth / 2, w: 1.5, h: 1.5, rotation: 0, points: [] }
+    const it: StageItem = { id: uid(), kind: 'person', label: `Person ${n}`, x: show.stage.width / 2, y: show.stage.depth / 2, w: 1.5, h: 1.5, rotation: 0, points: [] }
     update((s) => ({ ...s, items: [...s.items, it] }))
     selectItem(it.id)
   }
   const addPoint = (item: StageItem) =>
-    patchItem(item.id, { points: [...item.points, { id: crypto.randomUUID(), label: `Point ${item.points.length + 1}`, x: item.w / 2, y: item.h / 2 }] })
+    patchItem(item.id, { points: [...item.points, { id: uid(), label: `Point ${item.points.length + 1}`, x: item.w / 2, y: item.h / 2 }] })
 
   const savePreset = (cam: Camera) =>
-    patchCamera(cam.id, { presets: [...cam.presets, { id: crypto.randomUUID(), name: `Preset ${cam.presets.length + 1}`, fov: cam.fov, focus: { ...cam.focus } }] })
+    patchCamera(cam.id, { presets: [...cam.presets, { id: uid(), name: `Preset ${cam.presets.length + 1}`, fov: cam.fov, focus: { ...cam.focus } }] })
   const patchPreset = (cam: Camera, id: string, patch: Partial<CameraPreset>) =>
     patchCamera(cam.id, { presets: cam.presets.map((p) => (p.id === id ? { ...p, ...patch } : p)) })
 
