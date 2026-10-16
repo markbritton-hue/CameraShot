@@ -3,7 +3,6 @@ import { aimTargets, defaultShow, normalizeShow } from '../../shared/types'
 import type { AtemStatus, Camera, CameraPreset, LiveState, PtzStates, ServerMessage, Show, StageItem } from '../../shared/types'
 import StageView, { DEFAULT_PLATFORM_COLOR, LIVE_COLOR, PREVIEW_COLOR } from './StageView'
 import Setup from './Setup'
-import CloudPanel from './CloudPanel'
 import StartPage from './StartPage'
 import CameraView from './CameraView'
 import LiveWindow from './LiveWindow'
@@ -181,7 +180,14 @@ export default function App() {
       ...structuredClone(show),
       name,
       items: [],
-      cameras: show.cameras.map((c) => ({ ...c, presets: [] })),
+      // no presets (neither the plan's nor the camera memory slots learned from the last show), and the cameras start in
+      // an even row near the audience edge, each aimed straight out (up the plan) at the middle of the stage
+      cameras: show.cameras.map((c, i, all) => ({
+        ...c, presets: [], slots: [], positionLocked: undefined,
+        x: Math.round(((show.stage.width * (i + 1)) / (all.length + 1)) * 2) / 2,
+        y: show.stage.depth - 2,
+        focus: { ...c.focus, x: Math.round(((show.stage.width * (i + 1)) / (all.length + 1)) * 2) / 2, y: show.stage.depth / 2 },
+      })),
     }
     void cloud.create(base)
     setScreen('editor')
@@ -351,7 +357,7 @@ export default function App() {
       {!display && (
         // the panel takes on the selected camera's color (a tint, so the text stays readable)
         <aside className={`side${selected ? ' has-cam' : ''}${sideOpen ? ' open' : ''}`} style={selected ? ({ '--cam': selected.color } as React.CSSProperties) : undefined}>
-          {/* the show-level options (title, shows list, setup, cloud, grid size) only appear when no camera is picked */}
+          {/* the show-level options (title, shows list, setup) only appear when no camera is picked */}
           {!selected && (<>
           <div className="title-row">
             <h1>CameraShot</h1>
@@ -364,18 +370,7 @@ export default function App() {
           </p>
           <button onClick={() => setDisplay(true)}>Display mode</button>
 
-          <CloudPanel cloud={cloud} />
 
-          <fieldset className="lockable" disabled={locked}>
-          <h2>Grid size (feet)</h2>
-          <div className="row">
-            <label>Width <input type="number" min={4} step={1} value={show.stage.width} onChange={(e) => update((s) => ({ ...s, stage: { ...s.stage, width: +e.target.value || 4 } }))} /></label>
-            <label>Depth <input type="number" min={4} step={1} value={show.stage.depth} onChange={(e) => update((s) => ({ ...s, stage: { ...s.stage, depth: +e.target.value || 4 } }))} /></label>
-            <label>Grid square <input type="number" min={0.5} step={0.5} value={show.stage.grid ?? 2} title="Size of one grid square, in feet"
-              onChange={(e) => update((s) => ({ ...s, stage: { ...s.stage, grid: Math.max(0.5, +e.target.value || 2) } }))} /></label>
-          </div>
-          <p className="hint">Each square is {show.stage.grid ?? 2} ft. The brighter lines (every {5 * (show.stage.grid ?? 2)} ft) are numbered from the top-left corner. Enter the real size of your stage.</p>
-          </fieldset>
           </>)}
 
           <h2>Cameras <button onClick={addCamera} disabled={locked}>+ Add</button></h2>
@@ -384,6 +379,9 @@ export default function App() {
               <li key={c.id} className={c.id === selectedId ? 'sel' : ''} onClick={() => selectCamera(c.id)}>
                 <span className="dot" style={{ background: c.color }} />Cam {c.number} · {c.name}
                 <small>ATEM {c.atemInput}</small>
+                <button className={`item-lock`} aria-pressed={c.positionLocked === true}
+                  title={c.positionLocked ? 'Position locked: click to unlock' : 'Click to lock the camera\'s position on the grid'}
+                  onClick={(e) => { e.stopPropagation(); patchCamera(c.id, { positionLocked: c.positionLocked ? undefined : true }) }}>{c.positionLocked ? '🔒' : '🔓'}</button>
               </li>
             ))}
           </ul>
@@ -559,7 +557,7 @@ export default function App() {
       )}
 
       {setupOpen && (
-        <Setup show={show} atem={atem} serverAvailable={connected && !STATIC_MODE} onClose={() => setSetupOpen(false)} update={update} />
+        <Setup show={show} atem={atem} gridLocked={locked} serverAvailable={connected && !STATIC_MODE} onClose={() => setSetupOpen(false)} update={update} />
       )}
     </div>
   )

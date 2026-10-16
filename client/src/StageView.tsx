@@ -335,7 +335,7 @@ export default function StageView({ show, live, width, height, selectedId, selec
                 {here >= 0 && presetTag(cam.id, `here-${cam.id}`, 0, 0, here + 1, ptzNow, false, cam.color)}
               </Group>
               {/* camera body */}
-              <Group x={cx} y={cy} draggable={editable}
+              <Group x={cx} y={cy} draggable={editable && !cam.positionLocked}
                 onDragMove={(e) => onCameraChange(cam.id, { x: e.target.x() / s, y: e.target.y() / s })}
                 onMouseDown={() => onSelect(cam.id)} onTouchStart={() => onSelect(cam.id)}
                 onDblClick={() => onCameraOpen(cam.id)} onDblTap={() => onCameraOpen(cam.id)}>
@@ -377,6 +377,47 @@ export default function StageView({ show, live, width, height, selectedId, selec
                   )
                 })()}
               </Group>
+              {/* Drag handles on the picked camera: the white dot on the focus circle sets the focus size, the one on the cone's edge sets the zoom (field of view). */}
+              {editable && cam.id === selectedId && (() => {
+                const hr = (heading * Math.PI) / 180
+                const rPos = { x: fx + cam.focus.radius * s * Math.cos(hr), y: fy + cam.focus.radius * s * Math.sin(hr) }
+                const zr = ((heading + cam.fov / 2) * Math.PI) / 180
+                const zd = Math.max(coneLen * 0.6, CAM_R + 30)
+                const zPos = { x: cx + zd * Math.cos(zr), y: cy + zd * Math.sin(zr) }
+                const pointer = (e: { target: { getStage: () => { getPointerPosition: () => { x: number; y: number } | null } | null } }) => {
+                  const q = e.target.getStage()?.getPointerPosition()
+                  return q ? { x: q.x - ox, y: q.y - oy } : null
+                }
+                return (
+                  <>
+                    <Circle x={rPos.x} y={rPos.y} radius={9} fill="#fff" stroke={col} strokeWidth={3} draggable
+                      onMouseEnter={hand(true)} onMouseLeave={hand(false)}
+                      onMouseDown={(e) => { e.cancelBubble = true }} onTouchStart={(e) => { e.cancelBubble = true }}
+                      onDragMove={(e) => {
+                        const q = pointer(e)
+                        if (!q) return
+                        // focus size: distance from the focus point to the handle, snapped to half a foot
+                        const radius = Math.min(16, Math.max(1, Math.round((Math.hypot(q.x - fx, q.y - fy) / s) * 2) / 2))
+                        e.target.position({ x: fx + radius * s * Math.cos(hr), y: fy + radius * s * Math.sin(hr) })
+                        onCameraChange(cam.id, { focus: { ...cam.focus, radius } })
+                      }} />
+                    <Circle x={zPos.x} y={zPos.y} radius={9} fill="#fff" stroke={col} strokeWidth={3} draggable
+                      onMouseEnter={hand(true)} onMouseLeave={hand(false)}
+                      onMouseDown={(e) => { e.cancelBubble = true }} onTouchStart={(e) => { e.cancelBubble = true }}
+                      onDragMove={(e) => {
+                        const q = pointer(e)
+                        if (!q) return
+                        // zoom: twice the angle between where the camera points and where the handle is, whole degrees
+                        let diff = (Math.atan2(q.y - cy, q.x - cx) * 180) / Math.PI - heading
+                        diff = ((((diff + 180) % 360) + 360) % 360) - 180
+                        const fov = Math.min(120, Math.max(10, Math.round(2 * Math.abs(diff))))
+                        const a = ((heading + fov / 2) * Math.PI) / 180
+                        e.target.position({ x: cx + zd * Math.cos(a), y: cy + zd * Math.sin(a) })
+                        onCameraChange(cam.id, { fov })
+                      }} />
+                  </>
+                )
+              })()}
             </Group>
           )
         })}

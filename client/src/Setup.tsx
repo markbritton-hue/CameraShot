@@ -40,6 +40,8 @@ function OtherDevices({ serverAvailable }: { serverAvailable: boolean }) {
 interface Props {
   show: Show
   atem: AtemStatus
+  /** the grid cannot be resized while the ATEM simulator is on */
+  gridLocked: boolean
   /** false on GitHub Pages / when the Node server is unreachable: connections can't be made */
   serverAvailable: boolean
   onClose: () => void
@@ -73,7 +75,7 @@ function atemSummary(a: AtemStatus): { text: string; cls: string } {
   }
 }
 
-export default function Setup({ show, atem, serverAvailable, onClose, update }: Props) {
+export default function Setup({ show, atem, gridLocked, serverAvailable, onClose, update }: Props) {
   // IP boxes are drafts: they are applied on Connect / when you leave the box, not on every keystroke
   const [atemDraft, setAtemDraft] = useState(show.settings.atemIp)
   const [pings, setPings] = useState<Record<string, PingResult>>({})
@@ -107,6 +109,19 @@ export default function Setup({ show, atem, serverAvailable, onClose, update }: 
             addresses; they're saved with the show and used once the server is running (<code>npm run dev</code>).
           </p>
         )}
+
+        <section>
+          <h3>Grid size (feet)</h3>
+          <fieldset className="lockable" disabled={gridLocked}>
+            <div className="row">
+              <label>Width <input type="number" min={4} step={1} value={show.stage.width} onChange={(e) => update((s) => ({ ...s, stage: { ...s.stage, width: +e.target.value || 4 } }))} /></label>
+              <label>Depth <input type="number" min={4} step={1} value={show.stage.depth} onChange={(e) => update((s) => ({ ...s, stage: { ...s.stage, depth: +e.target.value || 4 } }))} /></label>
+              <label>Grid square <input type="number" min={0.5} step={0.5} value={show.stage.grid ?? 2} title="Size of one grid square, in feet"
+                onChange={(e) => update((s) => ({ ...s, stage: { ...s.stage, grid: Math.max(0.5, +e.target.value || 2) } }))} /></label>
+            </div>
+          </fieldset>
+          <p className="hint">Each square is {show.stage.grid ?? 2} ft. The brighter lines (every {5 * (show.stage.grid ?? 2)} ft) are numbered from the top-left corner. Enter the real size of your stage.{gridLocked ? ' The grid is locked while the ATEM simulator is on; switch it off to change the size.' : ''}</p>
+        </section>
 
         <section>
           <h3>ATEM switcher</h3>

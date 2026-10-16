@@ -8,6 +8,8 @@ export interface CameraPreset {
 
 export interface Camera {
   id: string
+  /** locked: the camera icon cannot be dragged to a new spot (its focus point and zoom still move) */
+  positionLocked?: boolean
   number: number
   name: string
   color: string
