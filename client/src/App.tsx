@@ -135,13 +135,23 @@ export default function App() {
     return () => ro.disconnect()
   }, [])
 
+  // While the ATEM simulator is ON the grid is locked, so nothing gets moved, resized, added or deleted by accident
+  // during a demo. Switch the simulator OFF (the default) and the grid is editable. Cameras can always be picked,
+  // opened, moved with the pad, and sent to presets.
+  const locked = show.settings.simulator === true
+
+  // Everything that depends on "which camera is live" goes through this: the red/green colouring, the LIVE / NEXT names,
+  // the ON AIR badges and the "move it on air?" question. With the simulator OFF nothing is live as far as the app is
+  // concerned, even if a real ATEM is connected and reporting a program camera.
+  const liveShown = useMemo<LiveState>(() => (locked ? live : { program: null, preview: null }), [locked, live])
+
   // one tap on a preset chip sends the camera there; if it is live on the ATEM, ask first
   const recallSlot = useCallback((cameraId: string, n: number) => {
     const cam = show.cameras.find((c) => c.id === cameraId)
     if (!cam?.ip) return
-    if (cam.atemInput === live.program && !window.confirm(`Cam ${cam.number} is live on the ATEM. Move it to preset ${n} on air?`)) return
+    if (cam.atemInput === liveShown.program && !window.confirm(`Cam ${cam.number} is live on the ATEM. Move it to preset ${n} on air?`)) return
     void fetch('/api/ptz/drive', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ host: cam.ip, action: 'recall', n }) })
-  }, [show.cameras, live.program])
+  }, [show.cameras, liveShown.program])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setDisplay(false)
@@ -172,11 +182,6 @@ export default function App() {
     void cloud.create(base)
     setScreen('editor')
   }
-
-  // While the ATEM simulator is ON the grid is locked, so nothing gets moved, resized, added or deleted by accident
-  // during a demo. Switch the simulator OFF (the default) and the grid is editable. Cameras can always be picked,
-  // opened, moved with the pad, and sent to presets.
-  const locked = show.settings.simulator === true
 
   const selectCamera = useCallback((id: string | null) => {
     setSelectedId(id)
@@ -258,10 +263,6 @@ export default function App() {
   const selected = show.cameras.find((c) => c.id === selectedId) ?? null
   const selectedItem = show.items.find((i) => i.id === selectedItemId) ?? null
   const targets = useMemo(() => aimTargets(show.items), [show.items])
-  // The red (live) and green (next) colouring only shows while the ATEM switch is ON. Off means no colouring at all, even
-  // if a real ATEM is connected and reporting a program camera. (The ON AIR warnings below still use the real `live`,
-  // so a camera that really is on air is never moved without a warning.)
-  const liveShown = useMemo<LiveState>(() => (locked ? live : { program: null, preview: null }), [locked, live])
   const liveCam = useMemo(() => show.cameras.find((c) => c.atemInput === liveShown.program), [show.cameras, liveShown.program])
   const prevCam = useMemo(() => show.cameras.find((c) => c.atemInput === liveShown.preview), [show.cameras, liveShown.preview])
 
@@ -316,7 +317,7 @@ export default function App() {
           const cam = show.cameras.find((c) => c.id === id)
           if (!cam) return null
           return (
-            <LiveWindow key={id} camera={cam} onAir={cam.atemInput === live.program} bounds={{ w: size.w, h: size.h }} z={6 + i} startAt={{ x: 24 + i * 28, y: 70 + i * 28 }}
+            <LiveWindow key={id} camera={cam} onAir={cam.atemInput === liveShown.program} bounds={{ w: size.w, h: size.h }} z={6 + i} startAt={{ x: 24 + i * 28, y: 70 + i * 28 }}
               onFocus={() => openLiveWin(id)} onClose={() => setLiveWins((w) => w.filter((x) => x !== id))}
               onOpenControls={() => setViewCameraId(id)} />
           )
@@ -522,7 +523,7 @@ export default function App() {
         <CameraView
           camera={show.cameras.find((c) => c.id === viewCameraId)!}
           serverAvailable={connected && !STATIC_MODE}
-          onAir={show.cameras.find((c) => c.id === viewCameraId)?.atemInput === live.program}
+          onAir={show.cameras.find((c) => c.id === viewCameraId)?.atemInput === liveShown.program}
           ptzState={ptz[viewCameraId]}
           onClose={() => setViewCameraId(null)}
           onOpenSetup={() => { setViewCameraId(null); setSetupOpen(true) }}
