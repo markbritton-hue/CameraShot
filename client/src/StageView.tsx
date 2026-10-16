@@ -21,6 +21,8 @@ function darken(hex: string, amount: number) {
 }
 
 const rgb = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16))
+/** a #rrggbb color as rgba() with the given alpha (the color itself if it isn't a valid hex) */
+const withAlpha = (hex: string, a: number) => (/^#[0-9a-fA-F]{6}$/.test(hex) ? `rgba(${rgb(hex).join(',')},${a})` : hex)
 /** `t` of color a mixed with the rest b, as an rgb() string */
 function mixHex(a: string, b: string, t: number) {
   const x = rgb(a), y = rgb(b)
@@ -32,14 +34,28 @@ function lightness(hex: string) {
   const [r, g, b] = rgb(hex).map((v) => { const c = v / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4 })
   return 0.2126 * r + 0.7152 * g + 0.0722 * b
 }
-/** colors for a platform: its fill, an edge a little lighter or darker, and text that stays readable on it */
+/**
+ * Platforms are drawn pale and see-through, so the grid shows through them and they stay in the background,
+ * with a light white border (brighter and thicker while the platform is selected).
+ * (Transparency alone would only make a color look darker on the dark stage, so the color is also lightened.)
+ */
+export const DEFAULT_PLATFORM_COLOR = '#9fb3d1'
+const PLATFORM_ALPHA = 0.5
+const STAGE_BG = '#161b25'
+const toHex = (c: number[]) => '#' + c.map((v) => Math.round(v).toString(16).padStart(2, '0')).join('')
+const mixRgb = (a: number[], b: number[], t: number) => a.map((v, i) => v * t + b[i] * (1 - t))
+
+/** colors for a platform: a pale see-through fill, a solid edge in the chosen color, and text that stays readable on it */
 export function platformLook(color: string | undefined) {
-  if (!color || !/^#[0-9a-fA-F]{6}$/.test(color)) return { fill: '#2b3447', edge: '#5b6780', text: '#b6c0d4', sub: '#8a97b2' }
-  // near-black text wins over white text once the fill is lighter than ~0.19 (where their contrast ratios cross)
-  const light = lightness(color) > 0.19
+  const base = color && /^#[0-9a-fA-F]{6}$/.test(color) ? color : DEFAULT_PLATFORM_COLOR
+  const pale = mixRgb(rgb(base), [255, 255, 255], 0.7) // 70% the chosen color + 30% white
+  // what the fill really looks like once it sits over the dark stage: the text color is chosen against THIS
+  const onStage = mixRgb(pale, rgb(STAGE_BG), PLATFORM_ALPHA)
+  // near-black text wins over white text once the background is lighter than ~0.19 (where their contrast ratios cross)
+  const light = lightness(toHex(onStage)) > 0.19
   return {
-    fill: color,
-    edge: mixHex(color, light ? '#000000' : '#ffffff', 0.7),
+    fill: `rgba(${pale.map(Math.round).join(',')},${PLATFORM_ALPHA})`,
+    edge: 'rgba(255,255,255,0.7)', // a light white border around every platform
     text: light ? '#0b0e14' : '#ffffff',
     sub: light ? 'rgba(11,14,20,.78)' : 'rgba(255,255,255,.82)',
   }
@@ -163,18 +179,20 @@ export default function StageView({ show, live, width, height, selectedId, selec
     const cur = !!st && st.preset === n
     const look = cur && st ? CURRENT[st.status] : { stroke: camColor, fill: darken(camColor, 0.28), text: camColor }
     const label = `P${n}`
-    const w = 12 + 7 * label.length
-    const tx = dot ? 7 : 10
-    const ty = dot ? -22 : 8
+    // label size: 14 px bold text in a 22 px tall pill (was 11 px in 17 px), a little larger so it reads from across the room
+    const FONT = 14, HEIGHT = 22
+    const w = 18 + 9 * label.length
+    const tx = dot ? 8 : 12
+    const ty = dot ? -(HEIGHT + 8) : 10
     // clicking the label takes that preset (the camera goes there and the plan's aim follows)
     const go = (e: { cancelBubble: boolean }) => { e.cancelBubble = true; onPresetTag(camId, n) }
     return (
       <Group key={key} x={x} y={y}>
-        {dot && <Circle radius={4} fill={look.fill} stroke={look.stroke} strokeWidth={2} listening={false} />}
+        {dot && <Circle radius={5} fill={look.fill} stroke={look.stroke} strokeWidth={2.5} listening={false} />}
         <Group onClick={go} onTap={go} onMouseEnter={hand(true)} onMouseLeave={hand(false)}>
-          <Rect x={tx} y={ty} width={w} height={17} cornerRadius={8.5} fill={look.fill} stroke={look.stroke} strokeWidth={cur ? 2 : 1.25}
+          <Rect x={tx} y={ty} width={w} height={HEIGHT} cornerRadius={HEIGHT / 2} fill={look.fill} stroke={look.stroke} strokeWidth={cur ? 2.5 : 1.5}
             dash={cur && st?.status === 'moved' ? [3, 2] : undefined} />
-          <Text text={label} x={tx} y={ty + 3} width={w} align="center" fontStyle="bold" fontSize={11} fill={look.text} listening={false} />
+          <Text text={label} x={tx} y={ty + (HEIGHT - FONT) / 2 - 0.5} width={w} align="center" fontStyle="bold" fontSize={FONT} fill={look.text} listening={false} />
         </Group>
       </Group>
     )
@@ -246,7 +264,7 @@ export default function StageView({ show, live, width, height, selectedId, selec
                     const look = platformLook(it.color)
                     return (
                       <>
-                        <Rect width={it.w * s} height={it.h * s} fill={look.fill} stroke={picked ? '#fff' : look.edge} strokeWidth={picked ? 2 : 1} />
+                        <Rect width={it.w * s} height={it.h * s} fill={look.fill} stroke={picked ? '#fff' : look.edge} strokeWidth={picked ? 3 : 1.5} />
                         {it.w * s >= 64 && it.h * s >= 40 ? (
                           <>
                             {/* platforms show their size in feet under the name (only when there is room for two lines) */}
@@ -284,10 +302,10 @@ export default function StageView({ show, live, width, height, selectedId, selec
           // which of this camera's saved presets the focus circle is sitting on right now, if any
           const here = cam.presets.findIndex((p) => Math.hypot(p.focus.x - cam.focus.x, p.focus.y - cam.focus.y) < 0.05)
           return (
-            <Group key={cam.id} opacity={dimmed ? 0.35 : 1}>
+            <Group key={cam.id} opacity={dimmed ? 0.55 : 1}>
               <Wedge x={cx} y={cy} radius={coneLen} angle={cam.fov} rotation={heading - cam.fov / 2}
-                fill={col} opacity={status === 'live' ? 0.32 : status === 'preview' ? 0.22 : 0.1}
-                stroke={col} strokeWidth={emphasis ? 2 : 1} listening={false} />
+                fill={withAlpha(col, status === 'live' ? 0.4 : status === 'preview' ? 0.3 : 0.17)}
+                stroke={withAlpha(col, emphasis ? 0.9 : 0.55)} strokeWidth={emphasis ? 2.5 : 1.5} listening={false} />
               <Line points={[cx, cy, fx, fy]} stroke={col} strokeWidth={emphasis ? 2 : 1} dash={[6, 6]} listening={false} />
               {/* where each of this camera's other presets aims: a dot with its P-number */}
               {cam.presets.map((p, i) => (i === here ? null : presetTag(cam.id, p.id, p.focus.x * s, p.focus.y * s, i + 1, ptzNow, true, cam.color)))}
@@ -296,8 +314,11 @@ export default function StageView({ show, live, width, height, selectedId, selec
                 onDragMove={(e) => onCameraChange(cam.id, { focus: { ...cam.focus, x: e.target.x() / s, y: e.target.y() / s } })}
                 onMouseDown={() => onSelect(cam.id)}>
                 {/* the big circle is click-through so it never blocks what's underneath; only the center grabs */}
-                <Circle radius={cam.focus.radius * s} fill={col} opacity={emphasis ? 0.35 : 0.15}
-                  stroke={col} strokeWidth={emphasis ? 3 : 1.5} dash={[8, 5]} listening={false} />
+                {/* Brighter focus area: a stronger tint, a full-strength outline (the old single `opacity` faded the outline
+                    along with the fill), and a soft glow in the camera's color. */}
+                <Circle radius={cam.focus.radius * s} fill={withAlpha(col, emphasis ? 0.55 : 0.4)}
+                  stroke={col} strokeWidth={emphasis ? 4 : 2.5} dash={[8, 5]}
+                  shadowColor={col} shadowBlur={emphasis ? 22 : 12} shadowOpacity={0.9} listening={false} />
                 <Circle radius={12} fill="#000" opacity={0.01} />
                 <Line points={[-8, 0, 8, 0]} stroke={col} strokeWidth={2} listening={false} />
                 <Line points={[0, -8, 0, 8]} stroke={col} strokeWidth={2} listening={false} />

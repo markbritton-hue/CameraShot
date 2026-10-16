@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { aimTargets, defaultShow, normalizeShow } from '../../shared/types'
 import type { AtemStatus, Camera, CameraPreset, LiveState, PtzStates, ServerMessage, Show, StageItem } from '../../shared/types'
-import StageView, { LIVE_COLOR, PREVIEW_COLOR } from './StageView'
+import StageView, { DEFAULT_PLATFORM_COLOR, LIVE_COLOR, PREVIEW_COLOR } from './StageView'
 import Setup from './Setup'
 import CloudPanel from './CloudPanel'
 import StartPage from './StartPage'
@@ -11,7 +11,6 @@ import { useCloud } from './cloud'
 
 const CLIENT_ID = crypto.randomUUID()
 // platform colors: the default steel gray first, then black, wood, gray, red, blue, green, gold, purple, white
-const DEFAULT_PLATFORM_COLOR = '#2b3447'
 const PLATFORM_COLORS = [DEFAULT_PLATFORM_COLOR, '#111827', '#6b4f3a', '#8b8f99', '#b91c1c', '#1d4ed8', '#15803d', '#a16207', '#7e22ce', '#e5e7eb']
 const COLORS = ['#38bdf8', '#a78bfa', '#fbbf24', '#f472b6', '#34d399', '#fb923c', '#60a5fa', '#c084fc']
 
@@ -442,7 +441,7 @@ export default function App() {
                   <div className="swatches">
                     {PLATFORM_COLORS.map((c) => (
                       <button key={c} className={`swatch${(selectedItem.color ?? DEFAULT_PLATFORM_COLOR).toLowerCase() === c ? ' on' : ''}`}
-                        style={{ background: c }} title={c === DEFAULT_PLATFORM_COLOR ? 'Default steel gray' : c}
+                        style={{ background: c }} title={c === DEFAULT_PLATFORM_COLOR ? 'Default (light steel)' : c}
                         onClick={() => patchItem(selectedItem.id, { color: c === DEFAULT_PLATFORM_COLOR ? undefined : c })} />
                     ))}
                     <input type="color" value={selectedItem.color ?? DEFAULT_PLATFORM_COLOR} title="Pick any color"
