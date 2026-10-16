@@ -11,6 +11,7 @@ import { createAtemLink } from './atem'
 import { applySetting, drive, readPosition, readStatus } from './visca'
 import { createVideo } from './video'
 import { createPtzWatcher } from './ptzWatch'
+import { networkAddresses, registerVideoProxy } from './videoProxy'
 import type { PtzSetting } from '../../shared/types'
 import { DEFAULT_VISCA_PORT } from '../../shared/types'
 
@@ -163,6 +164,9 @@ app.post('/api/atem/refresh', async () => {
   return { ok: true, connected: atemLink.status().state === 'connected', live, changed: before !== live }
 })
 app.get('/api/video/status', async () => video.status())
+registerVideoProxy(app, video)
+// the addresses other devices (an iPad) can use to open this app
+app.get('/api/network', async () => ({ port: PORT, addresses: networkAddresses() }))
 
 /**
  * Reachability check for the setup page: one ping to a camera or the ATEM.

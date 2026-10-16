@@ -64,9 +64,11 @@ export function platformLook(color: string | undefined) {
 /** 12 -> 12', 13.12 -> 13.1' */
 const feet = (n: number) => `${+n.toFixed(1)}'`
 
-const CHIP_H = 22
-const COLUMN_X = 34 // distance (px) from the camera's center to the first column of preset chips
-const ROW_PITCH = CHIP_H + 4
+const CHIP_H = 27 // height (px) of the preset chips beside a camera (was 22)
+const CHIP_FONT = 15 // their text size (was 12)
+const CAM_R = 24 // radius (px) of a camera's circle on the grid (was 16); its number, badge, name and chips scale with it
+const COLUMN_X = CAM_R + 18 // distance (px) from the camera's center to the first column of preset chips
+const ROW_PITCH = CHIP_H + 5
 const MAX_ROWS = 8 // chips per column before starting another column to the right
 const COLUMN_GAP = 6
 
@@ -211,9 +213,12 @@ export default function StageView({ show, live, width, height, selectedId, selec
   const orderedItems = [...show.items].sort((a, b) => layer[a.kind] - layer[b.kind])
 
   return (
-    <Stage width={width} height={height} onMouseDown={(e) => e.target === e.target.getStage() && clearSelection()}>
+    // Konva sends a finger as touch events (not mouse events), so every "pick" handler is wired to both.
+    <Stage width={width} height={height}
+      onMouseDown={(e) => e.target === e.target.getStage() && clearSelection()}
+      onTouchStart={(e) => e.target === e.target.getStage() && clearSelection()}>
       <Layer x={ox} y={oy}>
-        <Rect width={stage.width * s} height={stage.depth * s} fill="#161b25" stroke="#4b5568" strokeWidth={2} onMouseDown={clearSelection} />
+        <Rect width={stage.width * s} height={stage.depth * s} fill="#161b25" stroke="#4b5568" strokeWidth={2} onMouseDown={clearSelection} onTouchStart={clearSelection} />
         {gridLines}
         <Text text="AUDIENCE" x={0} y={stage.depth * s + 6} width={stage.width * s} align="center" fill="#6b7587" fontSize={12} listening={false} />
 
@@ -229,7 +234,8 @@ export default function StageView({ show, live, width, height, selectedId, selec
           if (it.kind === 'person') {
             const r = personR
             return (
-              <Group key={it.id} x={it.x * s} y={it.y * s} draggable={editable} onDragMove={dragItem} onMouseDown={() => { onSelect(null); onSelectItem(it.id) }}>
+              <Group key={it.id} x={it.x * s} y={it.y * s} draggable={editable} onDragMove={dragItem}
+                onMouseDown={() => { onSelect(null); onSelectItem(it.id) }} onTouchStart={() => { onSelect(null); onSelectItem(it.id) }}>
                 {/* top-down figure facing the audience at 0°: shoulders, then head slightly forward. The label never rotates. */}
                 <Group rotation={it.rotation}>
                   <Ellipse radiusX={r} radiusY={r * 0.55} y={-r * 0.1} fill="#5b7fa8" stroke={picked ? '#fff' : '#1f3550'} strokeWidth={picked ? 3 : 2} />
@@ -242,7 +248,7 @@ export default function StageView({ show, live, width, height, selectedId, selec
           return (
             <Group key={it.id} x={(it.x + it.w / 2) * s} y={(it.y + it.h / 2) * s} offsetX={(it.w * s) / 2} offsetY={(it.h * s) / 2}
               rotation={it.rotation} draggable={editable} onDragMove={dragItem}
-              onMouseDown={() => { onSelect(null); onSelectItem(it.id) }}>
+              onMouseDown={() => { onSelect(null); onSelectItem(it.id) }} onTouchStart={() => { onSelect(null); onSelectItem(it.id) }}>
               {it.kind === 'stairs' ? (() => {
                 const n = Math.max(2, Math.min(8, it.steps ?? 3))
                 const treadH = (it.h * s) / n
@@ -312,14 +318,16 @@ export default function StageView({ show, live, width, height, selectedId, selec
               {/* focus area */}
               <Group x={fx} y={fy} draggable={editable}
                 onDragMove={(e) => onCameraChange(cam.id, { focus: { ...cam.focus, x: e.target.x() / s, y: e.target.y() / s } })}
-                onMouseDown={() => onSelect(cam.id)}>
+                onMouseDown={() => onSelect(cam.id)} onTouchStart={() => onSelect(cam.id)}>
                 {/* the big circle is click-through so it never blocks what's underneath; only the center grabs */}
                 {/* Brighter focus area: a stronger tint, a full-strength outline (the old single `opacity` faded the outline
                     along with the fill), and a soft glow in the camera's color. */}
                 <Circle radius={cam.focus.radius * s} fill={withAlpha(col, emphasis ? 0.55 : 0.4)}
                   stroke={col} strokeWidth={emphasis ? 4 : 2.5} dash={[8, 5]}
                   shadowColor={col} shadowBlur={emphasis ? 22 : 12} shadowOpacity={0.9} listening={false} />
-                <Circle radius={12} fill="#000" opacity={0.01} />
+                {/* the grab area for the focus point, big enough for a fingertip. (Comments must sit on their own line inside
+                    Konva groups: a space left beside one becomes a text node, which react-konva cannot draw and crashes on.) */}
+                <Circle radius={18} fill="#000" opacity={0.01} />
                 <Line points={[-8, 0, 8, 0]} stroke={col} strokeWidth={2} listening={false} />
                 <Line points={[0, -8, 0, 8]} stroke={col} strokeWidth={2} listening={false} />
                 {emphasis && <Text text="FOCUS" y={-cam.focus.radius * s - 16} x={-30} width={60} align="center" fill={col} fontStyle="bold" fontSize={12} listening={false} />}
@@ -329,17 +337,17 @@ export default function StageView({ show, live, width, height, selectedId, selec
               {/* camera body */}
               <Group x={cx} y={cy} draggable={editable}
                 onDragMove={(e) => onCameraChange(cam.id, { x: e.target.x() / s, y: e.target.y() / s })}
-                onMouseDown={() => onSelect(cam.id)}
+                onMouseDown={() => onSelect(cam.id)} onTouchStart={() => onSelect(cam.id)}
                 onDblClick={() => onCameraOpen(cam.id)} onDblTap={() => onCameraOpen(cam.id)}>
-                {emphasis && <Circle radius={26} fill={col} opacity={0.25} listening={false} />}
-                <Circle radius={16} fill={col} stroke={cam.id === selectedId ? '#fff' : '#0b0e14'} strokeWidth={cam.id === selectedId ? 3 : 2} />
-                <Text text={String(cam.number)} x={-16} y={-8} width={32} align="center" fontStyle="bold" fontSize={16} fill="#0b0e14" listening={false} />
+                {emphasis && <Circle radius={CAM_R + 12} fill={col} opacity={0.25} listening={false} />}
+                <Circle radius={CAM_R} fill={col} stroke={cam.id === selectedId ? '#fff' : '#0b0e14'} strokeWidth={cam.id === selectedId ? 4 : 2.5} />
+                <Text text={String(cam.number)} x={-CAM_R} y={-12} width={CAM_R * 2} align="center" fontStyle="bold" fontSize={24} fill="#0b0e14" listening={false} />
                 {(() => {
                   const st = ptz[cam.id] // absent for fixed cameras, and for a PTZ camera that can't be reached
                   // every preset known on this camera, plus the one it reports now even if it isn't listed yet
                   const slots = st ? [...new Set([...(cam.slots ?? []), ...(st.preset > 0 ? [st.preset] : [])])].sort((a, b) => a - b) : []
                   // the presets, stacked in a column beside the camera circle
-                  const placed = placeInColumns(slots.map((n) => ({ n, label: `P${n}`, w: 14 + 8 * `P${n}`.length })))
+                  const placed = placeInColumns(slots.map((n) => ({ n, label: `P${n}`, w: 18 + 9.5 * `P${n}`.length })))
                   const tap = (n: number) => (e: { cancelBubble: boolean }) => { e.cancelBubble = true; onPresetChip(cam.id, n) }
                   const hasLive = !!cam.ip && IPV4.test(cam.ip)
                   const openLive = (e: { cancelBubble: boolean }) => { e.cancelBubble = true; onLiveIcon(cam.id) }
@@ -352,19 +360,19 @@ export default function StageView({ show, live, width, height, selectedId, selec
                           <Group key={c.n} x={c.x - c.w / 2} y={c.y - CHIP_H / 2} onClick={tap(c.n)} onTap={tap(c.n)} onMouseEnter={hand(true)} onMouseLeave={hand(false)}>
                             <Rect width={c.w} height={CHIP_H} cornerRadius={CHIP_H / 2} fill={look.fill} stroke={look.stroke} strokeWidth={cur ? 2.5 : 1.5}
                               dash={cur && st.status === 'moved' ? [4, 3] : undefined} />
-                            <Text text={c.label + (cur && st.status === 'unknown' ? '?' : '')} width={c.w} y={5} align="center" fontStyle="bold" fontSize={12} fill={look.text} listening={false} />
+                            <Text text={c.label + (cur && st.status === 'unknown' ? '?' : '')} width={c.w} y={(CHIP_H - CHIP_FONT) / 2 - 0.5} align="center" fontStyle="bold" fontSize={CHIP_FONT} fill={look.text} listening={false} />
                           </Group>
                         )
                       })}
                       {/* live view badge on the circle's lower left: opens a small floating live picture */}
                       {hasLive && (
-                        <Group x={-12} y={12} onClick={openLive} onTap={openLive}>
+                        <Group x={-CAM_R * 0.72} y={CAM_R * 0.72} scaleX={1.3} scaleY={1.3} onClick={openLive} onTap={openLive}>
                           <Circle radius={9} fill="#1d4ed8" stroke="#bfdbfe" strokeWidth={1.5} />
                           <Rect x={-5.5} y={-3.5} width={7} height={7} cornerRadius={1.5} fill="#fff" listening={false} />
                           <Line points={[2.5, -1.5, 6, -3.5, 6, 3.5, 2.5, 1.5]} closed fill="#fff" listening={false} />
                         </Group>
                       )}
-                      <Text text={status === 'live' ? 'LIVE' : status === 'preview' ? 'NEXT' : cam.name} x={-40} y={20} width={80} align="center" fontStyle={emphasis ? 'bold' : 'normal'} fontSize={12} fill={col} listening={false} />
+                      <Text text={status === 'live' ? 'LIVE' : status === 'preview' ? 'NEXT' : cam.name} x={-50} y={CAM_R + 5} width={100} align="center" fontStyle={emphasis ? 'bold' : 'normal'} fontSize={13} fill={col} listening={false} />
                     </>
                   )
                 })()}

@@ -5,6 +5,9 @@ html, body, #root { height: 100%; margin: 0; background: #0b0e14; color: #d7deec
 .canvas { flex: 1; position: relative; min-width: 0; }
 .banner { position: absolute; top: 10px; left: 12px; right: 12px; z-index: 2; display: flex; gap: 10px; align-items: center; pointer-events: none; font-size: 18px; }
 .banner button { pointer-events: auto; margin-left: auto; }
+/* Exit display: small, at the left end of the bar. Fixed small text so it stays small even though the display-mode bar uses 28px type. */
+.banner button.exit-display { margin-left: 0; margin-right: 6px; padding: 2px 9px; font-size: 11px; line-height: 1.4; opacity: .75; background: rgba(16, 21, 30, .7); }
+.banner button.exit-display:hover { opacity: 1; }
 .banner .tag { padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 700; color: #0b0e14; }
 .banner .tag + b { margin-right: 18px; }
 .offline-bar { position: absolute; top: 48px; left: 12px; right: 12px; z-index: 2; padding: 8px 12px; border-radius: 6px; background: #7f1d1d; color: #fecaca; font-size: 13px; font-weight: 600; pointer-events: none; }
@@ -112,6 +115,35 @@ button.link { background: none; border: none; color: #7aa2f7; padding: 0; text-d
 .cam-table td { padding: 4px 6px; vertical-align: middle; }
 .cam-table input, .cam-table select { width: 100%; }
 .cam-table input.invalid { border-color: #f87171; }
+.addr-kind { color: #8793a8; font-size: 11px; }
+/* ---- iPad and other touch screens ---- */
+html, body { overscroll-behavior: none; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+.canvas { touch-action: none; } /* dragging on the grid must not scroll or zoom the page */
+.side-toggle { display: none; }
+.side-backdrop { display: none; }
+@media (max-width: 900px) {
+  /* narrow screen (iPad held upright): the sidebar becomes a drawer that slides in from the right */
+  .side-toggle { display: inline-flex; align-items: center; margin-left: 10px; font-size: 20px; line-height: 1; padding: 6px 14px; pointer-events: auto; }
+  .side { position: fixed; top: 0; right: 0; bottom: 0; width: min(360px, 88vw); z-index: 9; transform: translateX(105%); transition: transform .22s ease; box-shadow: -14px 0 34px rgba(0, 0, 0, .55); }
+  .side.open { transform: none; }
+  .side-backdrop { display: block; position: fixed; inset: 0; z-index: 8; background: rgba(0, 0, 0, .45); }
+}
+@media (pointer: coarse) {
+  /* fingers: bigger targets, and 16 px text in boxes so iPadOS does not zoom the page when you tap one */
+  button, select, input:not([type=range]):not([type=checkbox]):not([type=color]) { min-height: 40px; }
+  input, select, textarea { font-size: 16px; }
+  input[type=range] { min-height: 32px; }
+  .pad button { padding: 16px 0; }
+  .preset-grid button, .zoom-row button, .sim button { min-height: 44px; }
+  .cams li { padding: 11px 8px; }
+  .swatch { width: 36px; height: 36px; }
+  .mini-grid { grid-template-columns: repeat(3, 36px); }
+  .mini-side { grid-template-rows: repeat(3, 36px); }
+  .mini-pad button { width: 36px; height: 36px; font-size: 17px; }
+  .live-win-title button { min-height: 34px; min-width: 34px; }
+  .live-win-grip { width: 32px; height: 32px; }
+  .banner button.exit-display { font-size: 13px; padding: 6px 12px; }
+}
 .cam-table .ptz-check { text-align: center; }
 .cam-table .ptz-check input { width: auto; transform: scale(1.25); cursor: pointer; }
 .cam-table button.active { background: #2f5fd0; border-color: #2f5fd0; color: #fff; }

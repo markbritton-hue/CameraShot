@@ -1,7 +1,41 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { IPV4 } from '../../shared/types'
 import type { AtemStatus, Camera, Show } from '../../shared/types'
 import PtzControls from './PtzControls'
+
+/** "Open this on an iPad": the addresses of this PC that other devices on the network can use. */
+function OtherDevices({ serverAvailable }: { serverAvailable: boolean }) {
+  const [net, setNet] = useState<{ port: number; addresses: { address: string; kind: 'lan' | 'tailscale' }[] } | null>(null)
+  useEffect(() => {
+    if (!serverAvailable) return
+    fetch('/api/network').then((r) => r.json()).then(setNet).catch(() => setNet(null))
+  }, [serverAvailable])
+
+  return (
+    <section>
+      <h3>iPad, phone and other devices</h3>
+      {!serverAvailable && <p className="hint">Start the CameraShot server on your PC (Start CameraShot.bat) to use it from other devices.</p>}
+      {serverAvailable && net && (
+        <>
+          <p className="hint">On a device on the same network as this PC, open Safari or Chrome and go to:</p>
+          {net.addresses.length === 0 && <p className="hint bad">No network address found. Is this PC connected to the network?</p>}
+          {net.addresses.map((a) => (
+            <code className="block" key={a.address}>
+              http://{a.address}:{net.port} <span className="addr-kind">{a.kind === 'tailscale' ? '(Tailscale, works from anywhere you have Tailscale)' : '(this network)'}</span>
+            </code>
+          ))}
+          <p className="hint">
+            On an iPad: open that address in Safari, tap Share, then <b>Add to Home Screen</b>. CameraShot then opens full screen like an app.
+            Everything you do there happens through this PC, which has to stay on and running CameraShot.
+          </p>
+          <p className="hint warn">
+            Anyone on the same network who opens that address can control the cameras and ATEM, and watch the live video. There is no passcode.
+          </p>
+        </>
+      )}
+    </section>
+  )
+}
 
 interface Props {
   show: Show
@@ -155,6 +189,8 @@ export default function Setup({ show, atem, serverAvailable, onClose, update }: 
             </tbody>
           </table>
         </section>
+
+        <OtherDevices serverAvailable={serverAvailable} />
 
         <section>
           <h3>Companion (optional)</h3>

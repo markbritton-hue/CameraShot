@@ -49,10 +49,13 @@ export default function App() {
   const [liveWins, setLiveWins] = useState<string[]>([]) // floating live pictures, last = on top
   const openLiveWin = useCallback((id: string) => setLiveWins((w) => [...w.filter((x) => x !== id), id]), [])
   // the start page (sign in, pick or create a show) comes first; the editor stays mounted behind it
-  const [screen, setScreen] = useState<'start' | 'editor'>('start')
+  // (opening the app at /?screen=editor goes straight to the editor; handy for the home-screen icon and for screenshots)
+  const [screen, setScreen] = useState<'start' | 'editor'>(() => (new URLSearchParams(location.search).get('screen') === 'editor' ? 'editor' : 'start'))
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
   const [display, setDisplay] = useState(false)
+  // on a narrow screen (an iPad held upright) the sidebar is a drawer that slides in from the right
+  const [sideOpen, setSideOpen] = useState(() => new URLSearchParams(location.search).get('side') === 'open')
   const [size, setSize] = useState({ w: 800, h: 600 })
   const wrapRef = useRef<HTMLDivElement>(null)
   const saveTimer = useRef<number | undefined>(undefined)
@@ -295,6 +298,8 @@ export default function App() {
     <div className={`app ${display ? 'display' : ''}`}>
       <div className="canvas" ref={wrapRef}>
         <div className="banner">
+          {/* small, at the left end of the bar (the live / next names and the connection status are on the right) */}
+          {display && <button className="exit-display" title="Leave display mode (Esc)" onClick={() => setDisplay(false)}>✕ Exit (Esc)</button>}
           {locked ? (
             <>
               <span className="tag live" style={{ background: LIVE_COLOR }}>LIVE</span>
@@ -306,8 +311,8 @@ export default function App() {
             <span className="live-off" title="The ATEM switch in the sidebar is Off, so no live or next coloring is shown.">live / next coloring off</span>
           )}
           <span className={`conn ${connected ? 'ok' : ''}`}>{STATIC_MODE ? 'planner mode' : connected ? 'connected' : 'offline'}</span>
+          {!display && <button className="side-toggle" aria-label="Menu" title="Menu" onClick={() => setSideOpen(!sideOpen)}>☰</button>}
           {locked && <span className="lock-tag" title="The ATEM simulator is on, so the grid is locked. Switch the simulator off to edit.">🔒 grid locked</span>}
-          {display && <button onClick={() => setDisplay(false)}>Exit display (Esc)</button>}
         </div>
         {!connected && !STATIC_MODE && (
           <div className="offline-bar">
@@ -332,9 +337,10 @@ export default function App() {
 
       </div>
 
+      {!display && sideOpen && <div className="side-backdrop" onClick={() => setSideOpen(false)} />}
       {!display && (
         // the panel takes on the selected camera's color (a tint, so the text stays readable)
-        <aside className={`side${selected ? ' has-cam' : ''}`} style={selected ? ({ '--cam': selected.color } as React.CSSProperties) : undefined}>
+        <aside className={`side${selected ? ' has-cam' : ''}${sideOpen ? ' open' : ''}`} style={selected ? ({ '--cam': selected.color } as React.CSSProperties) : undefined}>
           {/* the show-level options (title, shows list, setup, cloud, grid size) only appear when no camera is picked */}
           {!selected && (<>
           <div className="title-row">

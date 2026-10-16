@@ -10,6 +10,8 @@ export default defineConfig({
     host: true,
     proxy: {
       '/api': 'http://localhost:3001',
+      // live video: the server passes go2rtc's player and video websocket through here
+      '/video': { target: 'http://localhost:3001', ws: true },
       '/ws': { target: 'ws://localhost:3001', ws: true },
     },
   },

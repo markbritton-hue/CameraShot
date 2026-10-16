@@ -18,8 +18,9 @@ interface Props {
 interface VideoStatus { state: 'missing' | 'off' | 'starting' | 'ready' | 'error'; port: number; streams: string[]; error?: string }
 
 const DEFAULT_RTSP_PATH = '/2'
-// go2rtc only listens on this PC, so the picture can only be shown on the screen CameraShot runs on
-const ON_THIS_PC = ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname)
+// The picture comes through CameraShot's own server (/video/...), so it plays on any device that can open the app,
+// this PC or an iPad. The public GitHub Pages site has no server, so there is nothing to play there.
+const NO_SERVER = location.hostname.endsWith('.github.io')
 
 /**
  * The picture itself (or a message explaining why there isn't one). go2rtc turns the camera's RTSP stream into
@@ -30,7 +31,7 @@ export function LiveFrame({ camNumber, rtspPath, fill = false }: { camNumber: nu
   const stream = `cam${camNumber}`
 
   useEffect(() => {
-    if (!ON_THIS_PC) return
+    if (NO_SERVER) return
     let stop = false
     let timer: number | undefined
     const poll = async () => {
@@ -49,7 +50,7 @@ export function LiveFrame({ camNumber, rtspPath, fill = false }: { camNumber: nu
   }, [stream, rtspPath])
 
   const msg = (text: string, bad = false) => <p className={`hint${bad ? ' bad' : ''}${fill ? ' live-msg' : ''}`}>{text}</p>
-  if (!ON_THIS_PC) return msg('Live view only works on the PC running CameraShot. Open it there at http://localhost:5173.')
+  if (NO_SERVER) return msg('Live video needs the CameraShot server running on your PC (Start CameraShot.bat). This public page has no server.')
   if (!video) return msg('Checking…')
   if (video.state === 'missing') return msg("The video helper isn't installed (tools/go2rtc/go2rtc.exe).", true)
   if (video.state === 'error') return msg(`${video.error ?? 'The video helper stopped.'} It restarts by itself.`, true)
@@ -58,7 +59,7 @@ export function LiveFrame({ camNumber, rtspPath, fill = false }: { camNumber: nu
     <div className={`live-frame${fill ? ' fill' : ''}`}>
       {/* key forces a fresh connection when the stream path changes */}
       <iframe key={`${stream}-${rtspPath ?? ''}`} title={`Camera ${camNumber} live view`} allow="autoplay"
-        src={`http://127.0.0.1:${video.port}/stream.html?src=${stream}&mode=mse`} />
+        src={`${import.meta.env.BASE_URL}video/stream.html?src=${stream}&mode=mse`} />
     </div>
   )
 }

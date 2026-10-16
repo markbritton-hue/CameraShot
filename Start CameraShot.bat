@@ -46,6 +46,7 @@ if not defined NO_BROWSER start "" /b powershell -NoProfile -WindowStyle Hidden 
 
 echo.
 echo CameraShot is starting at http://localhost:%PORT%
+powershell -NoProfile -Command "Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -match '^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)' } | ForEach-Object { 'On an iPad or phone on this network:  http://' + $_.IPAddress + ':%PORT%' }"
 echo Leave this window open while you use it. Close it to stop CameraShot.
 echo.
 call npm start

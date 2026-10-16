@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <!-- the logo as a full-bleed square, the source for the home-screen icons (iPadOS rounds the corners itself) -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1c2740"/>
+      <stop offset="1" stop-color="#0c1018"/>
+    </linearGradient>
+    <linearGradient id="cone" gradientUnits="userSpaceOnUse" x1="36" y1="94" x2="96" y2="34">
+      <stop offset="0" stop-color="#38bdf8" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#38bdf8" stop-opacity="0.12"/>
+    </linearGradient>
+    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="3.2" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect width="128" height="128" fill="url(#bg)"/>
+  <g stroke="#2a3652" stroke-width="1" opacity="0.7">
+    <path d="M16 0V128M32 0V128M48 0V128M64 0V128M80 0V128M96 0V128M112 0V128"/>
+    <path d="M0 16H128M0 32H128M0 48H128M0 64H128M0 80H128M0 96H128M0 112H128"/>
+  </g>
+  <path d="M36 94 L64.7 19.3 A80 80 0 0 1 110.7 65.3 Z" fill="url(#cone)" stroke="#7dd3fc" stroke-width="2" stroke-linejoin="round"/>
+  <circle cx="84" cy="48" r="15" fill="#38bdf8" fill-opacity="0.28" stroke="#bae6fd" stroke-width="3" stroke-dasharray="6 4" filter="url(#glow)"/>
+  <path d="M78.5 48H89.5M84 42.5V53.5" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="36" cy="94" r="15" fill="#38bdf8" stroke="#0b0e14" stroke-width="3.5"/>
+  <circle cx="36" cy="94" r="7.5" fill="#0b0e14"/>
+  <circle cx="33.5" cy="91.5" r="2.4" fill="#e0f2fe"/>
+  <circle cx="105" cy="23" r="8" fill="#ef4444" stroke="#fecaca" stroke-width="2" filter="url(#glow)"/>
+</svg>
