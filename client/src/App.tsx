@@ -302,6 +302,14 @@ export default function App() {
     void simulate('preview', 0)
   }
 
+  // Display mode turns the simulator On (live / next coloring), and leaving it for the main screen turns it Off again
+  const wasDisplay = useRef(false)
+  useEffect(() => {
+    if (display === wasDisplay.current) return
+    wasDisplay.current = display
+    if (display !== simOn) toggleSim(display)
+  }, [display]) // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <div className={`app ${display ? 'display' : ''}`}>
       <div className="canvas" ref={wrapRef}>
