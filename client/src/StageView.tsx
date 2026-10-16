@@ -2,7 +2,7 @@ import { Arrow, Circle, Ellipse, Group, Layer, Line, Rect, Stage, Text, Wedge } 
 import { IPV4 } from '../../shared/types'
 import type { Camera, LiveState, PtzCameraState, PtzStates, Show } from '../../shared/types'
 
-// The preset the camera is on is drawn RED; the other known presets are quiet blue-grey.
+// The preset the camera is on is drawn RED; the other known presets are quiet blue-gray.
 // Solid red = on it, darker red = on its way, dashed = it has moved off, outline only = can't tell.
 const CURRENT = {
   on: { stroke: '#fca5a5', fill: '#b91c1c', text: '#ffffff' },
@@ -12,7 +12,7 @@ const CURRENT = {
 } as const
 const OTHER = { stroke: '#3a4760', fill: '#1c2433', text: '#9fb0cc' }
 
-/** A dark version of a colour for tag backgrounds: `amount` of the colour mixed into the stage's dark base. */
+/** A dark version of a color for tag backgrounds: `amount` of the color mixed into the stage's dark base. */
 function darken(hex: string, amount: number) {
   const base = [16, 21, 30]
   const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16))
@@ -21,7 +21,7 @@ function darken(hex: string, amount: number) {
 }
 
 const rgb = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16))
-/** `t` of colour a mixed with the rest b, as an rgb() string */
+/** `t` of color a mixed with the rest b, as an rgb() string */
 function mixHex(a: string, b: string, t: number) {
   const x = rgb(a), y = rgb(b)
   if (x.some(Number.isNaN) || y.some(Number.isNaN)) return a
@@ -32,7 +32,7 @@ function lightness(hex: string) {
   const [r, g, b] = rgb(hex).map((v) => { const c = v / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4 })
   return 0.2126 * r + 0.7152 * g + 0.0722 * b
 }
-/** colours for a platform: its fill, an edge a little lighter or darker, and text that stays readable on it */
+/** colors for a platform: its fill, an edge a little lighter or darker, and text that stays readable on it */
 export function platformLook(color: string | undefined) {
   if (!color || !/^#[0-9a-fA-F]{6}$/.test(color)) return { fill: '#2b3447', edge: '#5b6780', text: '#b6c0d4', sub: '#8a97b2' }
   // near-black text wins over white text once the fill is lighter than ~0.19 (where their contrast ratios cross)
@@ -49,15 +49,15 @@ export function platformLook(color: string | undefined) {
 const feet = (n: number) => `${+n.toFixed(1)}'`
 
 const CHIP_H = 22
-const COLUMN_X = 34 // distance (px) from the camera's centre to the first column of preset chips
+const COLUMN_X = 34 // distance (px) from the camera's center to the first column of preset chips
 const ROW_PITCH = CHIP_H + 4
 const MAX_ROWS = 8 // chips per column before starting another column to the right
 const COLUMN_GAP = 6
 
 /**
- * Stack preset chips in a vertical column to the right of the camera circle, centred on the camera and
+ * Stack preset chips in a vertical column to the right of the camera circle, centered on the camera and
  * left-aligned. Past MAX_ROWS the next chips start a new column further right, so any number fits.
- * Returns each chip's centre relative to the camera's centre.
+ * Returns each chip's center relative to the camera's center.
  */
 function placeInColumns<T extends { w: number }>(items: T[]) {
   const placed: (T & { x: number; y: number })[] = []
@@ -122,7 +122,7 @@ export default function StageView({ show, live, width, height, selectedId, selec
   const selectedPerson = show.items.find((i) => i.id === selectedItemId && i.kind === 'person') ?? null
   const personR = Math.max(9, 0.6 * s) // drawn about 1.2 ft across (a real adult is ~1.6 ft; shown smaller to keep the plan uncluttered)
 
-  // Angle (snapped to 5°) that points the item's "up" at the mouse, for a handle dragged around centre (cx, cy) in stage units
+  // Angle (snapped to 5°) that points the item's "up" at the mouse, for a handle dragged around center (cx, cy) in stage units
   const rotationToPointer = (e: { target: { getStage: () => { getPointerPosition: () => { x: number; y: number } | null } | null } }, cx: number, cy: number) => {
     const p = e.target.getStage()?.getPointerPosition()
     if (!p) return null
@@ -132,7 +132,7 @@ export default function StageView({ show, live, width, height, selectedId, selec
 
   const gridLines = []
   // Everything on the stage is in feet. One grid square is `grid` feet (default 2); every fifth line is brighter and
-  // labelled with its distance from the top-left corner, so the plan can be read like a tape measure.
+  // labeled with its distance from the top-left corner, so the plan can be read like a tape measure.
   const grid = stage.grid && stage.grid > 0 ? stage.grid : 2
   const major = 5
   const EPS = 1e-6
@@ -150,7 +150,7 @@ export default function StageView({ show, live, width, height, selectedId, selec
   }
 
   /**
-   * A "P3" tag for a preset's aim point, in the camera's own colour, or red when it is the camera's current preset.
+   * A "P3" tag for a preset's aim point, in the camera's own color, or red when it is the camera's current preset.
    * `dot` draws a small dot at the aim point itself (used for presets the focus circle isn't sitting on).
    */
   // pointer cursor over things that can be clicked
@@ -187,6 +187,11 @@ export default function StageView({ show, live, width, height, selectedId, selec
   const order = { idle: 0, preview: 1, live: 2 } as const
   const cameras = [...show.cameras].sort((a, b) => order[statusOf(a)] - order[statusOf(b)])
 
+  // Drawing order for the grid items: platforms at the very back, then stairs, then people on top (cameras and their
+  // cones are drawn after all of these). Items of the same kind keep the order they were added in.
+  const layer = { platform: 0, stairs: 1, person: 2 } as const
+  const orderedItems = [...show.items].sort((a, b) => layer[a.kind] - layer[b.kind])
+
   return (
     <Stage width={width} height={height} onMouseDown={(e) => e.target === e.target.getStage() && clearSelection()}>
       <Layer x={ox} y={oy}>
@@ -194,11 +199,11 @@ export default function StageView({ show, live, width, height, selectedId, selec
         {gridLines}
         <Text text="AUDIENCE" x={0} y={stage.depth * s + 6} width={stage.width * s} align="center" fill="#6b7587" fontSize={12} listening={false} />
 
-        {show.items.map((it) => {
+        {orderedItems.map((it) => {
           const picked = it.id === selectedItemId
           const dragItem = (e: { target: { x: () => number; y: () => number }; currentTarget: unknown }) => {
             if (e.target !== e.currentTarget) return // ignore bubbled drags from child points
-            // platforms/stairs sit on a centre pivot, so the group position is the centre; items store the top-left
+            // platforms/stairs sit on a center pivot, so the group position is the center; items store the top-left
             const dx = it.kind === 'person' ? 0 : it.w / 2
             const dy = it.kind === 'person' ? 0 : it.h / 2
             onItemMove(it.id, e.target.x() / s - dx, e.target.y() / s - dy)
@@ -290,7 +295,7 @@ export default function StageView({ show, live, width, height, selectedId, selec
               <Group x={fx} y={fy} draggable={editable}
                 onDragMove={(e) => onCameraChange(cam.id, { focus: { ...cam.focus, x: e.target.x() / s, y: e.target.y() / s } })}
                 onMouseDown={() => onSelect(cam.id)}>
-                {/* the big circle is click-through so it never blocks what's underneath; only the centre grabs */}
+                {/* the big circle is click-through so it never blocks what's underneath; only the center grabs */}
                 <Circle radius={cam.focus.radius * s} fill={col} opacity={emphasis ? 0.35 : 0.15}
                   stroke={col} strokeWidth={emphasis ? 3 : 1.5} dash={[8, 5]} listening={false} />
                 <Circle radius={12} fill="#000" opacity={0.01} />

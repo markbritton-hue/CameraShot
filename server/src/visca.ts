@@ -152,7 +152,7 @@ export async function readPosition(host: string, port: number): Promise<PtzPosit
 }
 
 export const EXPOSURE_MODES = [0x00, 0x03, 0x0a, 0x0b, 0x0d] // full auto, manual, shutter pri, iris pri, bright
-// auto, indoor, outdoor, one-push, ATW, manual, and 0x0B ("Static", the colour-temperature mode on AVKANS-style cameras)
+// auto, indoor, outdoor, one-push, ATW, manual, and 0x0B ("Static", the color-temperature mode on AVKANS-style cameras)
 export const WB_MODES = [0, 1, 2, 3, 4, 5, 0x0b]
 const MAX_GAIN = 15
 

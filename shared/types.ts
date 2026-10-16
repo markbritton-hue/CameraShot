@@ -50,7 +50,7 @@ export interface StageItem {
   label: string
   /** stairs only: number of steps (default 3); they rise towards the top of the plan, i.e. upstage */
   steps?: number
-  /** platform: top-left corner. person: centre. feet */
+  /** platform: top-left corner. person: center. feet */
   x: number
   y: number
   w: number
@@ -58,7 +58,7 @@ export interface StageItem {
   rotation: number
   /** only used by platforms */
   points: ItemPoint[]
-  /** platforms only: fill colour as #rrggbb; absent means the default steel grey */
+  /** platforms only: fill color as #rrggbb; absent means the default steel gray */
   color?: string
 }
 
@@ -66,7 +66,7 @@ export interface Show {
   name: string
   /** ms timestamp of the last edit; whichever copy (browser or server) is newer wins on reconnect */
   updatedAt: number
-  /** every length in the show (stage, items, cameras, focus areas) is in this unit; older shows were metres and are converted on load */
+  /** every length in the show (stage, items, cameras, focus areas) is in this unit; older shows were meters and are converted on load */
   units?: 'ft'
   /** width and depth of the stage in feet, and the size of one grid square in feet (default 2) */
   stage: { width: number; depth: number; grid?: number }
@@ -105,7 +105,7 @@ export interface PtzStatus {
   /** exposure compensation on, and its level (0-14, 7 is neutral on most cameras) */
   expComp: boolean
   expCompLevel: number
-  /** colour saturation and hue, 0-14 */
+  /** color saturation and hue, 0-14 */
   saturation: number
   hue: number
 }
@@ -151,8 +151,8 @@ export const DEFAULT_GRID_FT = 2
 const FT_PER_M = 3.28084
 const toFt = (v: number) => Math.round(v * FT_PER_M * 100) / 100
 
-/** Shows saved before feet were the unit were drawn in metres: convert every length once and mark the show as feet. */
-function metresToFeet(s: Show): Show {
+/** Shows saved before feet were the unit were drawn in meters: convert every length once and mark the show as feet. */
+function metersToFeet(s: Show): Show {
   const focus = (f: { x: number; y: number; radius: number }) => ({ x: toFt(f.x), y: toFt(f.y), radius: toFt(f.radius) })
   return {
     ...s,
@@ -169,7 +169,7 @@ function metresToFeet(s: Show): Show {
   }
 }
 
-/** Fill in fields added after a show was first saved, and bring older shows (metres) up to feet. Safe to run repeatedly. */
+/** Fill in fields added after a show was first saved, and bring older shows (meters) up to feet. Safe to run repeatedly. */
 export function normalizeShow(s: Show): Show {
   const n: Show = {
     ...s,
@@ -179,11 +179,11 @@ export function normalizeShow(s: Show): Show {
     // shows saved before the PTZ checkbox existed: a camera that already has an IP was being controlled, so keep it PTZ
     cameras: s.cameras.map((c) => ({ ...c, presets: c.presets ?? [], ptz: c.ptz ?? Boolean(c.ip), slots: c.slots ?? [] })),
   }
-  const out = n.units === 'ft' ? n : metresToFeet(n)
+  const out = n.units === 'ft' ? n : metersToFeet(n)
   return { ...out, stage: { ...out.stage, grid: out.stage.grid ?? DEFAULT_GRID_FT } }
 }
 
-/** Stage-space position of a point on a (possibly rotated) platform. Items rotate about their centre. */
+/** Stage-space position of a point on a (possibly rotated) platform. Items rotate about their center. */
 export function itemPointWorld(it: StageItem, p: ItemPoint): { x: number; y: number } {
   const r = (it.rotation * Math.PI) / 180
   const dx = p.x - it.w / 2

@@ -9,6 +9,8 @@ import type { Camera } from '../../shared/types'
  * Live video for the setup page. Browsers can't play a camera's RTSP stream, so go2rtc (a small
  * open-source program in tools/go2rtc) pulls it and serves a browser-playable version.
  *
+ * Sound: only the picture is requested from the camera (#media=video), so live views are always silent.
+ *
  * Safety: go2rtc is bound to 127.0.0.1 only (this PC's own screen), its RTSP/WebRTC servers are off,
  * and stream addresses are built here from a validated private IPv4 address and a plain path, never
  * from free text, so nothing like an `exec:` source can be injected.
@@ -88,7 +90,9 @@ export function createVideo({ exe, dataDir, port }: Options) {
     for (const c of cameras) {
       if (!c.ip || !IPV4.test(c.ip) || !PRIVATE_IP.test(c.ip)) continue
       const p = c.rtspPath && PATH_OK.test(c.rtspPath) ? c.rtspPath : DEFAULT_PATH
-      streams.set(`cam${c.number}`, `rtsp://${c.ip}:554${p}`)
+      // "#media=video" tells go2rtc to take only the picture from the camera. The camera's audio never reaches the
+      // browser, so live views are always silent and can't be unmuted.
+      streams.set(`cam${c.number}`, `rtsp://${c.ip}:554${p}#media=video`)
     }
     if (streams.size === 0) { stop(); status = { state: 'off', port, streams: [] }; return }
 

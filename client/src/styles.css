@@ -13,7 +13,7 @@ html, body, #root { height: 100%; margin: 0; background: #0b0e14; color: #d7deec
 .conn.ok { color: #22c55e; }
 .display .banner { font-size: 28px; }
 .side { width: 320px; overflow-y: auto; padding: 14px; border-left: 1px solid #222a38; background: #10151e; display: flex; flex-direction: column; gap: 8px; }
-/* with a camera selected the panel takes on that camera's colour: a tint for the background, the pure colour as an edge strip */
+/* with a camera selected the panel takes on that camera's color: a tint for the background, the pure color as an edge strip */
 .side { transition: background .25s, border-color .25s; }
 .side.has-cam { background: color-mix(in srgb, var(--cam) 30%, #10151e); border-left: 5px solid var(--cam); }
 .side.has-cam .editor, .side.has-cam .cams li { background: rgba(8, 11, 17, .38); }

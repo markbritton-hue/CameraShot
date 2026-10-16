@@ -84,7 +84,7 @@ export function LiveView({ camNumber, rtspPath, onRtspPath }: Pick<Props, 'camNu
 
 // Names match the camera's own web page. Aperture Priority is VISCA "iris priority" (11).
 const EXPOSURE: [number, string][] = [[0, 'Auto'], [3, 'Manual'], [10, 'Shutter priority'], [11, 'Aperture priority'], [13, 'Bright']]
-// "Static" (11) is inferred: the camera shows Static and reports 0x0B. It is the colour-temperature mode.
+// "Static" (11) is inferred: the camera shows Static and reports 0x0B. It is the color-temperature mode.
 const WB: [number, string][] = [[0, 'Auto mode'], [5, 'Manual mode'], [4, 'Auto tracking'], [3, 'One press WB'], [11, 'Static']]
 const SLIDER_DELAY_MS = 250
 
@@ -92,7 +92,7 @@ type SliderKey = 'gain' | 'redGain' | 'blueGain' | 'expCompLevel' | 'saturation'
 
 const hex = (n: number) => `0x${n.toString(16).toUpperCase().padStart(2, '0')}`
 
-/** Exposure, white balance and colour for one PTZ camera, read from and sent to the camera over VISCA. */
+/** Exposure, white balance and color for one PTZ camera, read from and sent to the camera over VISCA. */
 export default function PtzControls({ host, port, onPort, camNumber, rtspPath, onRtspPath, showLive = true, compact = false }: Props) {
   const [status, setStatus] = useState<PtzStatus | null>(null)
   const [busy, setBusy] = useState(false)

@@ -17,7 +17,7 @@ export async function drive(body: Record<string, unknown>): Promise<DriveResult>
   }
 }
 
-/** A button that acts while it is pressed and releases when the pointer lifts, leaves or is cancelled. */
+/** A button that acts while it is pressed and releases when the pointer lifts, leaves or is canceled. */
 export function HoldButton({ onDown, onUp, title, className, children }: {
   onDown: () => void; onUp: () => void; title: string; className?: string; children: ReactNode
 }) {

@@ -10,7 +10,7 @@ import LiveWindow from './LiveWindow'
 import { useCloud } from './cloud'
 
 const CLIENT_ID = crypto.randomUUID()
-// platform colours: the default steel grey first, then black, wood, grey, red, blue, green, gold, purple, white
+// platform colors: the default steel gray first, then black, wood, gray, red, blue, green, gold, purple, white
 const DEFAULT_PLATFORM_COLOR = '#2b3447'
 const PLATFORM_COLORS = [DEFAULT_PLATFORM_COLOR, '#111827', '#6b4f3a', '#8b8f99', '#b91c1c', '#1d4ed8', '#15803d', '#a16207', '#7e22ce', '#e5e7eb']
 const COLORS = ['#38bdf8', '#a78bfa', '#fbbf24', '#f472b6', '#34d399', '#fb923c', '#60a5fa', '#c084fc']
@@ -140,7 +140,7 @@ export default function App() {
   // opened, moved with the pad, and sent to presets.
   const locked = show.settings.simulator === true
 
-  // Everything that depends on "which camera is live" goes through this: the red/green colouring, the LIVE / NEXT names,
+  // Everything that depends on "which camera is live" goes through this: the red/green coloring, the LIVE / NEXT names,
   // the ON AIR badges and the "move it on air?" question. With the simulator OFF nothing is live as far as the app is
   // concerned, even if a real ATEM is connected and reporting a program camera.
   const liveShown = useMemo<LiveState>(() => (locked ? live : { program: null, preview: null }), [locked, live])
@@ -204,16 +204,16 @@ export default function App() {
       ...s,
       items: s.items.map((i) => {
         if (i.id !== id) return i
-        // Items rotate about their centre, so resizing from the corner handle must move the centre to keep the
+        // Items rotate about their center, so resizing from the corner handle must move the center to keep the
         // top-left corner where it is on screen (at any rotation). x/y store the unrotated top-left.
         const r = (i.rotation * Math.PI) / 180
         const cos = Math.cos(r), sin = Math.sin(r)
         const cornerX = i.x + i.w / 2 - (i.w / 2) * cos + (i.h / 2) * sin
         const cornerY = i.y + i.h / 2 - (i.w / 2) * sin - (i.h / 2) * cos
-        const centreX = cornerX + (w / 2) * cos - (h / 2) * sin
-        const centreY = cornerY + (w / 2) * sin + (h / 2) * cos
+        const centerX = cornerX + (w / 2) * cos - (h / 2) * sin
+        const centerY = cornerY + (w / 2) * sin + (h / 2) * cos
         return {
-          ...i, w, h, x: centreX - w / 2, y: centreY - h / 2,
+          ...i, w, h, x: centerX - w / 2, y: centerY - h / 2,
           // keep marked points inside the platform when it shrinks
           points: i.points.map((p) => ({ ...p, x: Math.min(p.x, w), y: Math.min(p.y, h) })),
         }
@@ -304,7 +304,7 @@ export default function App() {
               <b>{liveShown.preview === null ? '—' : prevCam ? `Cam ${prevCam.number} · ${prevCam.name}` : `Input ${liveShown.preview}`}</b>
             </>
           ) : (
-            <span className="live-off" title="The ATEM switch in the sidebar is Off, so no live or next colouring is shown.">live / next colouring off</span>
+            <span className="live-off" title="The ATEM switch in the sidebar is Off, so no live or next coloring is shown.">live / next coloring off</span>
           )}
           <span className={`conn ${connected ? 'ok' : ''}`}>{STATIC_MODE ? 'planner mode' : connected ? 'connected' : 'offline'}</span>
           {locked && <span className="lock-tag" title="The ATEM simulator is on, so the grid is locked. Switch the simulator off to edit.">🔒 grid locked</span>}
@@ -334,7 +334,7 @@ export default function App() {
       </div>
 
       {!display && (
-        // the panel takes on the selected camera's colour (a tint, so the text stays readable)
+        // the panel takes on the selected camera's color (a tint, so the text stays readable)
         <aside className={`side${selected ? ' has-cam' : ''}`} style={selected ? ({ '--cam': selected.color } as React.CSSProperties) : undefined}>
           {/* the show-level options (title, shows list, setup, cloud, grid size) only appear when no camera is picked */}
           {!selected && (<>
@@ -391,7 +391,7 @@ export default function App() {
               </label>
               <label>Zoom (FOV) {selected.fov}° <input type="range" min={10} max={120} value={selected.fov} onChange={(e) => patchCamera(selected.id, { fov: +e.target.value })} /></label>
               <label>Focus radius {selected.focus.radius.toFixed(1)} ft <input type="range" min={1} max={16} step={0.5} value={selected.focus.radius} onChange={(e) => patchCamera(selected.id, { focus: { ...selected.focus, radius: +e.target.value } })} /></label>
-              <label>Colour <input type="color" value={selected.color} onChange={(e) => patchCamera(selected.id, { color: e.target.value })} /></label>
+              <label>Color <input type="color" value={selected.color} onChange={(e) => patchCamera(selected.id, { color: e.target.value })} /></label>
 
               <h3>Presets <button onClick={() => savePreset(selected)}>+ Save current</button></h3>
               {selected.presets.length === 0 && <p className="hint">Aim and zoom the camera, then save it as a preset.</p>}
@@ -438,14 +438,14 @@ export default function App() {
               <label>Label <input value={selectedItem.label} onChange={(e) => patchItem(selectedItem.id, { label: e.target.value })} /></label>
               {selectedItem.kind === 'platform' && (
                 <div className="swatch-field">
-                  <span>Colour</span>
+                  <span>Color</span>
                   <div className="swatches">
                     {PLATFORM_COLORS.map((c) => (
                       <button key={c} className={`swatch${(selectedItem.color ?? DEFAULT_PLATFORM_COLOR).toLowerCase() === c ? ' on' : ''}`}
-                        style={{ background: c }} title={c === DEFAULT_PLATFORM_COLOR ? 'Default steel grey' : c}
+                        style={{ background: c }} title={c === DEFAULT_PLATFORM_COLOR ? 'Default steel gray' : c}
                         onClick={() => patchItem(selectedItem.id, { color: c === DEFAULT_PLATFORM_COLOR ? undefined : c })} />
                     ))}
-                    <input type="color" value={selectedItem.color ?? DEFAULT_PLATFORM_COLOR} title="Pick any colour"
+                    <input type="color" value={selectedItem.color ?? DEFAULT_PLATFORM_COLOR} title="Pick any color"
                       onChange={(e) => patchItem(selectedItem.id, { color: e.target.value })} />
                   </div>
                 </div>
@@ -489,11 +489,11 @@ export default function App() {
 
           <h2>ATEM simulator
             <button className={`sim-toggle ${simOn ? 'on' : 'off'}`} onClick={() => toggleSim(!simOn)}
-              title={simOn ? 'On: live / next colouring is shown and the grid is locked. Click to switch off.' : 'Off: no live / next colouring and the grid is editable. Click to switch on.'}>
+              title={simOn ? 'On: live / next coloring is shown and the grid is locked. Click to switch off.' : 'Off: no live / next coloring and the grid is editable. Click to switch on.'}>
               {simOn ? 'On' : 'Off'}
             </button>
           </h2>
-          {!simOn && <p className="hint">Off: no live or next colouring is shown, and the grid can be edited. Switch it On to show the ATEM's live and next cameras (the grid locks).</p>}
+          {!simOn && <p className="hint">Off: no live or next coloring is shown, and the grid can be edited. Switch it On to show the ATEM's live and next cameras (the grid locks).</p>}
           {simOn && (
             <>
               <p className="hint">
