@@ -285,3 +285,6 @@ button.danger { color: #f87171; }
 .sim button.preview { background: #22c55e; color: #04230f; border-color: #22c55e; }
 .hint { font-size: 12px; color: #8793a8; margin: 0; }
 code { font-size: 11px; word-break: break-all; color: #aab6cc; }
+.item-lock { margin-left: auto; padding: 0 6px; background: transparent; border: 0; font-size: 14px; line-height: 1; opacity: .45; }
+.item-lock.on { opacity: 1; }
+.cams li small + .item-lock { margin-left: 8px; }

@@ -175,14 +175,8 @@ export default function App() {
     setSelectedItemId(null)
   })
 
-  // A show that is linked to the cloud autosaves there, but a browser-only show would be lost when replaced.
-  const okToReplaceCurrent = () =>
-    cloud.cloudId !== null || show.updatedAt === 0 ||
-    window.confirm('The show open in this browser has not been saved to the cloud. Continuing will replace it. Continue?\n\n(Cancel, then use "Save to cloud" in the sidebar first.)')
-
   // a new show starts empty but keeps your cameras (inputs, IPs) and ATEM settings, without their presets
   const startNewShow = (name: string) => {
-    if (!okToReplaceCurrent()) return
     const base: Show = {
       ...structuredClone(show),
       name,
@@ -450,6 +444,9 @@ export default function App() {
               <li key={it.id} className={it.id === selectedItemId ? 'sel' : ''} onClick={() => selectItem(it.id)}>
                 <span>{it.kind === 'person' ? '🧍' : it.kind === 'stairs' ? '🪜' : '▭'}</span>{it.label}
                 {it.kind === 'platform' && <small>{feet(it.w)} × {feet(it.h)}</small>}
+                <button className={`item-lock`} aria-pressed={it.locked === true}
+                  title={it.locked ? 'Locked: click to unlock' : 'Click to lock its position and size'}
+                  onClick={(e) => { e.stopPropagation(); patchItem(it.id, { locked: it.locked ? undefined : true }) }}>{it.locked ? '🔒' : '🔓'}</button>
               </li>
             ))}
           </ul>
@@ -471,6 +468,7 @@ export default function App() {
                   </div>
                 </div>
               )}
+              <fieldset className="lockable" disabled={selectedItem.locked === true}>
               {selectedItem.kind !== 'person' && (
                 <>
                   {selectedItem.kind === 'stairs' && (
@@ -505,6 +503,7 @@ export default function App() {
               </div>
               <p className="hint">Drag the blue dot above the item to rotate it (snaps to 5°).</p>
               <button className="danger" onClick={() => { update((s) => ({ ...s, items: s.items.filter((i) => i.id !== selectedItem.id) })); setSelectedItemId(null) }}>Delete {selectedItem.kind}</button>
+              </fieldset>
             </div>
           )}
 
@@ -542,7 +541,7 @@ export default function App() {
         <StartPage
           cloud={cloud}
           lastOpenedId={cloud.cloudId}
-          onOpen={(c) => { if (c.id !== cloud.cloudId && !okToReplaceCurrent()) return; cloud.open(c); setScreen('editor') }}
+          onOpen={(c) => { cloud.open(c); setScreen('editor') }}
           onNew={startNewShow}
           onLocal={() => { cloud.unlink(); setScreen('editor') }}
         />

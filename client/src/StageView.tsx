@@ -234,7 +234,7 @@ export default function StageView({ show, live, width, height, selectedId, selec
           if (it.kind === 'person') {
             const r = personR
             return (
-              <Group key={it.id} x={it.x * s} y={it.y * s} draggable={editable} onDragMove={dragItem}
+              <Group key={it.id} x={it.x * s} y={it.y * s} draggable={editable && !it.locked} onDragMove={dragItem}
                 onMouseDown={() => { onSelect(null); onSelectItem(it.id) }} onTouchStart={() => { onSelect(null); onSelectItem(it.id) }}>
                 {/* top-down figure facing the audience at 0°: shoulders, then head slightly forward. The label never rotates. */}
                 <Group rotation={it.rotation}>
@@ -247,7 +247,7 @@ export default function StageView({ show, live, width, height, selectedId, selec
           }
           return (
             <Group key={it.id} x={(it.x + it.w / 2) * s} y={(it.y + it.h / 2) * s} offsetX={(it.w * s) / 2} offsetY={(it.h * s) / 2}
-              rotation={it.rotation} draggable={editable} onDragMove={dragItem}
+              rotation={it.rotation} draggable={editable && !it.locked} onDragMove={dragItem}
               onMouseDown={() => { onSelect(null); onSelectItem(it.id) }} onTouchStart={() => { onSelect(null); onSelectItem(it.id) }}>
               {it.kind === 'stairs' ? (() => {
                 const n = Math.max(2, Math.min(8, it.steps ?? 3))
@@ -387,7 +387,7 @@ export default function StageView({ show, live, width, height, selectedId, selec
         <Layer x={ox} y={oy}>
           <Group x={(selectedPlatform.x + selectedPlatform.w / 2) * s} y={(selectedPlatform.y + selectedPlatform.h / 2) * s}
             offsetX={(selectedPlatform.w * s) / 2} offsetY={(selectedPlatform.h * s) / 2} rotation={selectedPlatform.rotation}>
-            {editable && (
+            {editable && !selectedPlatform.locked && (
               <>
                 {/* rotation handle: drag it around the item; it snaps to 5° steps */}
                 <Line points={[(selectedPlatform.w * s) / 2, 0, (selectedPlatform.w * s) / 2, -26]} stroke="#5b8def" strokeWidth={2} listening={false} />
@@ -400,13 +400,13 @@ export default function StageView({ show, live, width, height, selectedId, selec
               </>
             )}
             {selectedPlatform.points.map((p) => (
-              <Group key={p.id} x={p.x * s} y={p.y * s} draggable={editable}
+              <Group key={p.id} x={p.x * s} y={p.y * s} draggable={editable && !selectedPlatform.locked}
                 onDragMove={(e) => onPointMove(selectedPlatform.id, p.id, e.target.x() / s, e.target.y() / s)}>
                 <Circle radius={8} fill="#fde047" stroke="#0b0e14" strokeWidth={1.5} />
                 <Text text={p.label} x={-40} y={11} width={80} align="center" fill="#fde047" fontSize={11} listening={false} />
               </Group>
             ))}
-            {editable && (['e', 's', 'se'] as const).map((edge) => {
+            {editable && !selectedPlatform.locked && (['e', 's', 'se'] as const).map((edge) => {
               // handles live in the platform's own (rotated) space, so resizing works at any rotation
               const place = (w: number, h: number) => ({ x: (edge === 's' ? w / 2 : w) * s, y: (edge === 'e' ? h / 2 : h) * s })
               const pos = place(selectedPlatform.w, selectedPlatform.h)
@@ -425,7 +425,7 @@ export default function StageView({ show, live, width, height, selectedId, selec
         </Layer>
       )}
 
-      {selectedPerson && editable && (
+      {selectedPerson && editable && !selectedPerson.locked && (
         <Layer x={ox} y={oy}>
           <Group x={selectedPerson.x * s} y={selectedPerson.y * s} rotation={selectedPerson.rotation}>
             <Line points={[0, -personR, 0, -personR - 22]} stroke="#5b8def" strokeWidth={2} listening={false} />

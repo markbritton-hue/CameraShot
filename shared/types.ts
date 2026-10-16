@@ -60,6 +60,8 @@ export interface StageItem {
   points: ItemPoint[]
   /** platforms only: fill color as #rrggbb; absent means the default steel gray */
   color?: string
+  /** locked items cannot be dragged, resized or rotated on the grid (or have their size changed in the panel) */
+  locked?: boolean
 }
 
 export interface Show {
