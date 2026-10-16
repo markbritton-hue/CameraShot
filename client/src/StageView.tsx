@@ -100,6 +100,8 @@ interface Props {
   ptz: PtzStates
   /** click one preset chip: send the camera to that preset */
   onPresetChip: (id: string, preset: number) => void
+  /** click a "P3" label at a preset's aim point on the grid: take that preset */
+  onPresetTag: (id: string, preset: number) => void
   /** click the little camera badge: open a floating live picture of that camera */
   onLiveIcon: (id: string) => void
   onItemMove: (id: string, x: number, y: number) => void
@@ -108,7 +110,7 @@ interface Props {
   onPointMove: (itemId: string, pointId: string, x: number, y: number) => void
 }
 
-export default function StageView({ show, live, width, height, selectedId, selectedItemId, editable, onSelect, onSelectItem, onCameraChange, onCameraOpen, ptz, onPresetChip, onLiveIcon, onItemMove, onItemResize, onItemRotate, onPointMove }: Props) {
+export default function StageView({ show, live, width, height, selectedId, selectedItemId, editable, onSelect, onSelectItem, onCameraChange, onCameraOpen, ptz, onPresetChip, onPresetTag, onLiveIcon, onItemMove, onItemResize, onItemRotate, onPointMove }: Props) {
   const clearSelection = () => { onSelect(null); onSelectItem(null) }
   const { stage } = show
   const pad = 24
@@ -151,19 +153,29 @@ export default function StageView({ show, live, width, height, selectedId, selec
    * A "P3" tag for a preset's aim point, in the camera's own colour, or red when it is the camera's current preset.
    * `dot` draws a small dot at the aim point itself (used for presets the focus circle isn't sitting on).
    */
-  const presetTag = (key: string, x: number, y: number, n: number, st: PtzCameraState | undefined, dot: boolean, camColor: string) => {
+  // pointer cursor over things that can be clicked
+  const hand = (on: boolean) => (e: { target: { getStage: () => { container: () => HTMLElement } | null } }) => {
+    const c = e.target.getStage()?.container()
+    if (c) c.style.cursor = on ? 'pointer' : ''
+  }
+
+  const presetTag = (camId: string, key: string, x: number, y: number, n: number, st: PtzCameraState | undefined, dot: boolean, camColor: string) => {
     const cur = !!st && st.preset === n
     const look = cur && st ? CURRENT[st.status] : { stroke: camColor, fill: darken(camColor, 0.28), text: camColor }
     const label = `P${n}`
     const w = 12 + 7 * label.length
     const tx = dot ? 7 : 10
     const ty = dot ? -22 : 8
+    // clicking the label takes that preset (the camera goes there and the plan's aim follows)
+    const go = (e: { cancelBubble: boolean }) => { e.cancelBubble = true; onPresetTag(camId, n) }
     return (
-      <Group key={key} x={x} y={y} listening={false}>
-        {dot && <Circle radius={4} fill={look.fill} stroke={look.stroke} strokeWidth={2} />}
-        <Rect x={tx} y={ty} width={w} height={17} cornerRadius={8.5} fill={look.fill} stroke={look.stroke} strokeWidth={cur ? 2 : 1.25}
-          dash={cur && st?.status === 'moved' ? [3, 2] : undefined} />
-        <Text text={label} x={tx} y={ty + 3} width={w} align="center" fontStyle="bold" fontSize={11} fill={look.text} />
+      <Group key={key} x={x} y={y}>
+        {dot && <Circle radius={4} fill={look.fill} stroke={look.stroke} strokeWidth={2} listening={false} />}
+        <Group onClick={go} onTap={go} onMouseEnter={hand(true)} onMouseLeave={hand(false)}>
+          <Rect x={tx} y={ty} width={w} height={17} cornerRadius={8.5} fill={look.fill} stroke={look.stroke} strokeWidth={cur ? 2 : 1.25}
+            dash={cur && st?.status === 'moved' ? [3, 2] : undefined} />
+          <Text text={label} x={tx} y={ty + 3} width={w} align="center" fontStyle="bold" fontSize={11} fill={look.text} listening={false} />
+        </Group>
       </Group>
     )
   }
@@ -273,7 +285,7 @@ export default function StageView({ show, live, width, height, selectedId, selec
                 stroke={col} strokeWidth={emphasis ? 2 : 1} listening={false} />
               <Line points={[cx, cy, fx, fy]} stroke={col} strokeWidth={emphasis ? 2 : 1} dash={[6, 6]} listening={false} />
               {/* where each of this camera's other presets aims: a dot with its P-number */}
-              {cam.presets.map((p, i) => (i === here ? null : presetTag(p.id, p.focus.x * s, p.focus.y * s, i + 1, ptzNow, true, cam.color)))}
+              {cam.presets.map((p, i) => (i === here ? null : presetTag(cam.id, p.id, p.focus.x * s, p.focus.y * s, i + 1, ptzNow, true, cam.color)))}
               {/* focus area */}
               <Group x={fx} y={fy} draggable={editable}
                 onDragMove={(e) => onCameraChange(cam.id, { focus: { ...cam.focus, x: e.target.x() / s, y: e.target.y() / s } })}
@@ -286,7 +298,7 @@ export default function StageView({ show, live, width, height, selectedId, selec
                 <Line points={[0, -8, 0, 8]} stroke={col} strokeWidth={2} listening={false} />
                 {emphasis && <Text text="FOCUS" y={-cam.focus.radius * s - 16} x={-30} width={60} align="center" fill={col} fontStyle="bold" fontSize={12} listening={false} />}
                 {/* the focus point is on one of the saved presets: label it (red when that is the camera's current preset) */}
-                {here >= 0 && presetTag(`here-${cam.id}`, 0, 0, here + 1, ptzNow, false, cam.color)}
+                {here >= 0 && presetTag(cam.id, `here-${cam.id}`, 0, 0, here + 1, ptzNow, false, cam.color)}
               </Group>
               {/* camera body */}
               <Group x={cx} y={cy} draggable={editable}
@@ -311,7 +323,7 @@ export default function StageView({ show, live, width, height, selectedId, selec
                         const cur = c.n === st.preset
                         const look = cur ? CURRENT[st.status] : OTHER
                         return (
-                          <Group key={c.n} x={c.x - c.w / 2} y={c.y - CHIP_H / 2} onClick={tap(c.n)} onTap={tap(c.n)}>
+                          <Group key={c.n} x={c.x - c.w / 2} y={c.y - CHIP_H / 2} onClick={tap(c.n)} onTap={tap(c.n)} onMouseEnter={hand(true)} onMouseLeave={hand(false)}>
                             <Rect width={c.w} height={CHIP_H} cornerRadius={CHIP_H / 2} fill={look.fill} stroke={look.stroke} strokeWidth={cur ? 2.5 : 1.5}
                               dash={cur && st.status === 'moved' ? [4, 3] : undefined} />
                             <Text text={c.label + (cur && st.status === 'unknown' ? '?' : '')} width={c.w} y={5} align="center" fontStyle="bold" fontSize={12} fill={look.text} listening={false} />

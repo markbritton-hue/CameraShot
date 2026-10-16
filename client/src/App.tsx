@@ -266,6 +266,14 @@ export default function App() {
   const liveCam = useMemo(() => show.cameras.find((c) => c.atemInput === liveShown.program), [show.cameras, liveShown.program])
   const prevCam = useMemo(() => show.cameras.find((c) => c.atemInput === liveShown.preview), [show.cameras, liveShown.preview])
 
+  // A click on a "P3" label at a preset's aim point on the grid only moves the PLAN: the camera's cone and focus circle
+  // take that preset's saved aim and zoom. It never sends anything to the real camera (that is what the chips beside
+  // the camera, the camera window and Companion are for), so it is safe to click while a camera is live.
+  const applyPresetTag = useCallback((cameraId: string, n: number) => {
+    const sp = show.cameras.find((c) => c.id === cameraId)?.presets[n - 1]
+    if (sp) patchCamera(cameraId, { fov: sp.fov, focus: { ...sp.focus } })
+  }, [show.cameras, patchCamera])
+
   const simulate = (which: 'program' | 'preview', input: number) => {
     if (STATIC_MODE) return setLive((l) => ({ ...l, [which]: input === 0 ? null : input })) // no server: simulate locally
     return fetch(`/api/atem/${which}/${input}`, { method: 'POST' })
@@ -309,7 +317,7 @@ export default function App() {
         )}
         <StageView show={show} live={liveShown} width={size.w} height={size.h} selectedId={selectedId} selectedItemId={selectedItemId}
           editable={!display && !locked} onSelect={selectCamera} onSelectItem={selectItem} onCameraChange={patchCamera} onCameraOpen={setViewCameraId}
-          ptz={ptz} onPresetChip={recallSlot} onLiveIcon={openLiveWin}
+          ptz={ptz} onPresetChip={recallSlot} onPresetTag={applyPresetTag} onLiveIcon={openLiveWin}
           onItemMove={moveItem} onItemResize={resizeItem} onItemRotate={rotateItem} onPointMove={movePoint} />
 
         {/* floating live pictures: 300 x 300 to start, drag the title to move, drag the corner to resize */}
