@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { CloudShow, useCloud } from './cloud'
+import Logo from './Logo'
 
 type Cloud = ReturnType<typeof useCloud>
 
@@ -27,7 +28,7 @@ export default function StartPage({ cloud, onOpen, onNew, onLocal, lastOpenedId 
     <div className="start">
       <div className="start-card">
         <header className="start-head">
-          <h1>📷 CameraShot</h1>
+          <Logo size={76} />
           {user && (
             <div className="start-user">
               <small title={user.email ?? ''}>{user.email}</small>

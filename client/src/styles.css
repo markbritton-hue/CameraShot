@@ -48,6 +48,12 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .start-card { width: min(640px, 100%); display: flex; flex-direction: column; gap: 18px; }
 .start-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .start-head h1 { margin: 0; font-size: 28px; }
+.logo-lockup { display: flex; align-items: center; gap: 16px; min-width: 0; }
+.logo-lockup img { display: block; flex: 0 0 auto; filter: drop-shadow(0 6px 18px rgba(56, 189, 248, .25)); }
+.logo-word { font-size: 38px; font-weight: 800; letter-spacing: -.5px; line-height: 1.05; color: #eef3fb; }
+.logo-word b { color: #38bdf8; font-weight: 800; }
+.logo-tag { margin-top: 4px; font-size: 13px; color: #8793a8; }
+@media (max-width: 520px) { .logo-word { font-size: 30px; } .logo-tag { display: none; } }
 .start-user { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .start-user small { color: #8793a8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .start-login { display: flex; flex-direction: column; gap: 10px; padding: 20px; background: #10151e; border: 1px solid #222a38; border-radius: 10px; }

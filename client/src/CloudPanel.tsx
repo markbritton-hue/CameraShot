@@ -3,7 +3,7 @@ import type { useCloud } from './cloud'
 type Cloud = ReturnType<typeof useCloud>
 
 /** Sidebar status for the cloud copy of the open show. Sign-in and the show list are on the start page. */
-export default function CloudPanel({ cloud, onShows }: { cloud: Cloud; onShows: () => void }) {
+export default function CloudPanel({ cloud }: { cloud: Cloud }) {
   const { configured, user, cloudId, status, error } = cloud
 
   return (
@@ -26,8 +26,6 @@ export default function CloudPanel({ cloud, onShows }: { cloud: Cloud; onShows: 
           {!cloudId && <button onClick={cloud.saveNew}>Save to cloud</button>}
         </>
       )}
-
-      <button onClick={onShows}>{user ? 'All shows' : 'Sign in / all shows'}</button>
 
       {error && <p className="hint bad">{error}</p>}
     </div>

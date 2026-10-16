@@ -348,7 +348,7 @@ export default function App() {
           </p>
           <button onClick={() => setDisplay(true)}>Display mode</button>
 
-          <CloudPanel cloud={cloud} onShows={() => setScreen('start')} />
+          <CloudPanel cloud={cloud} />
 
           <fieldset className="lockable" disabled={locked}>
           <h2>Grid size (feet)</h2>
