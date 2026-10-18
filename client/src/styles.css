@@ -15,7 +15,7 @@ html, body, #root { height: 100%; margin: 0; background: #0b0e14; color: #d7deec
 .conn { margin-left: auto; font-size: 12px; color: #ef4444; }
 .conn.ok { color: #22c55e; }
 .display .banner { font-size: 28px; }
-.side { width: 320px; overflow-y: auto; padding: 14px; border-left: 1px solid #222a38; background: #10151e; display: flex; flex-direction: column; gap: 8px; }
+.side { width: 380px; flex-shrink: 0; overflow-y: auto; padding: 14px; border-left: 1px solid #222a38; background: #10151e; display: flex; flex-direction: column; gap: 8px; }
 /* with a camera selected the panel takes on that camera's color: a tint for the background, the pure color as an edge strip */
 .side { transition: background .25s, border-color .25s; }
 .side.has-cam { background: color-mix(in srgb, var(--cam) 30%, #10151e); border-left: 5px solid var(--cam); }
@@ -124,7 +124,7 @@ html, body { overscroll-behavior: none; -webkit-tap-highlight-color: transparent
 @media (max-width: 900px) {
   /* narrow screen (iPad held upright): the sidebar becomes a drawer that slides in from the right */
   .side-toggle { display: inline-flex; align-items: center; margin-left: 10px; font-size: 20px; line-height: 1; padding: 6px 14px; pointer-events: auto; }
-  .side { position: fixed; top: 0; right: 0; bottom: 0; width: min(360px, 88vw); z-index: 9; transform: translateX(105%); transition: transform .22s ease; box-shadow: -14px 0 34px rgba(0, 0, 0, .55); }
+  .side { position: fixed; top: 0; right: 0; bottom: 0; width: min(400px, 92vw); z-index: 9; transform: translateX(105%); transition: transform .22s ease; box-shadow: -14px 0 34px rgba(0, 0, 0, .55); }
   .side.open { transform: none; }
   .side-backdrop { display: block; position: fixed; inset: 0; z-index: 8; background: rgba(0, 0, 0, .45); }
 }
@@ -288,3 +288,6 @@ code { font-size: 11px; word-break: break-all; color: #aab6cc; }
 .item-lock { margin-left: auto; padding: 2px 6px; background: transparent; border: 0; font-size: 18px; line-height: 1; opacity: .9; filter: brightness(1.5); }
 .item-lock.on { opacity: 1; filter: brightness(1.6) drop-shadow(0 0 4px rgba(253, 224, 71, .8)); }
 .cams li small + .item-lock { margin-left: 8px; }
+.cams li .cam-eye + .item-lock { margin-left: 0; }
+/* a camera switched off in the list (not drawn on the grid) */
+.cams li.cam-hidden { opacity: .5; }

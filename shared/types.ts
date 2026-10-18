@@ -10,6 +10,8 @@ export interface Camera {
   id: string
   /** locked: the camera icon cannot be dragged to a new spot (its focus point and zoom still move) */
   positionLocked?: boolean
+  /** hidden: the camera (its icon, cone, focus area and preset tags) is not drawn on the grid; it stays in the list */
+  hidden?: boolean
   number: number
   name: string
   color: string

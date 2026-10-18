@@ -376,9 +376,12 @@ export default function App() {
           <h2>Cameras <button onClick={addCamera} disabled={locked}>+ Add</button></h2>
           <ul className="cams">
             {show.cameras.map((c) => (
-              <li key={c.id} className={c.id === selectedId ? 'sel' : ''} onClick={() => selectCamera(c.id)}>
+              <li key={c.id} className={`${c.id === selectedId ? 'sel' : ''}${c.hidden ? ' cam-hidden' : ''}`} onClick={() => selectCamera(c.id)}>
                 <span className="dot" style={{ background: c.color }} />Cam {c.number} · {c.name}
                 <small>ATEM {c.atemInput}</small>
+                <button className="item-lock cam-eye" aria-pressed={c.hidden !== true}
+                  title={c.hidden ? 'Hidden from the grid: click to show it' : 'Click to hide this camera from the grid'}
+                  onClick={(e) => { e.stopPropagation(); patchCamera(c.id, { hidden: c.hidden ? undefined : true }) }}>{c.hidden ? '🚫' : '👁'}</button>
                 <button className={`item-lock`} aria-pressed={c.positionLocked === true}
                   title={c.positionLocked ? 'Position locked: click to unlock' : 'Click to lock the camera\'s position on the grid'}
                   onClick={(e) => { e.stopPropagation(); patchCamera(c.id, { positionLocked: c.positionLocked ? undefined : true }) }}>{c.positionLocked ? '🔒' : '🔓'}</button>

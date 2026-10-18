@@ -1,6 +1,6 @@
 import { Arrow, Circle, Ellipse, Group, Layer, Line, Rect, Stage, Text, Wedge } from 'react-konva'
 import { IPV4 } from '../../shared/types'
-import type { Camera, LiveState, PtzCameraState, PtzStates, Show } from '../../shared/types'
+import type { Camera, LiveState, PtzCameraState, PtzStates, Show, StageItem } from '../../shared/types'
 
 // The preset the camera is on is drawn RED; the other known presets are quiet blue-gray.
 // Solid red = on it, darker red = on its way, dashed = it has moved off, outline only = can't tell.
@@ -203,14 +203,33 @@ export default function StageView({ show, live, width, height, selectedId, selec
   const statusOf = (cam: Camera) =>
     cam.atemInput === live.program ? 'live' : cam.atemInput === live.preview ? 'preview' : 'idle'
 
-  // draw idle cameras first so live/preview sit on top
+  // draw idle cameras first so live/preview sit on top; cameras switched off in the list are not drawn at all
   const order = { idle: 0, preview: 1, live: 2 } as const
-  const cameras = [...show.cameras].sort((a, b) => order[statusOf(a)] - order[statusOf(b)])
+  const cameras = show.cameras.filter((c) => !c.hidden).sort((a, b) => order[statusOf(a)] - order[statusOf(b)])
 
-  // Drawing order for the grid items: platforms at the very back, then stairs, then people on top (cameras and their
-  // cones are drawn after all of these). Items of the same kind keep the order they were added in.
+  // Drawing order for the grid: platforms at the very back, then stairs, then the cameras and their cones, and the
+  // people in front of everything so a cone or focus circle never covers them. Items of the same kind keep the order
+  // they were added in.
   const layer = { platform: 0, stairs: 1, person: 2 } as const
-  const orderedItems = [...show.items].sort((a, b) => layer[a.kind] - layer[b.kind])
+  const orderedItems = [...show.items].filter((it) => it.kind !== 'person').sort((a, b) => layer[a.kind] - layer[b.kind])
+  const people = show.items.filter((it) => it.kind === 'person')
+
+  const drawPerson = (it: StageItem) => {
+    const picked = it.id === selectedItemId
+    const r = personR
+    return (
+      <Group key={it.id} x={it.x * s} y={it.y * s} draggable={editable && !it.locked}
+        onDragMove={(e) => onItemMove(it.id, e.target.x() / s, e.target.y() / s)}
+        onMouseDown={() => { onSelect(null); onSelectItem(it.id) }} onTouchStart={() => { onSelect(null); onSelectItem(it.id) }}>
+        {/* top-down figure facing the audience at 0°: shoulders, then head slightly forward. The label never rotates. */}
+        <Group rotation={it.rotation}>
+          <Ellipse radiusX={r} radiusY={r * 0.55} y={-r * 0.1} fill="#5b7fa8" stroke={picked ? '#fff' : '#1f3550'} strokeWidth={picked ? 3 : 2} />
+          <Circle radius={r * 0.46} y={r * 0.12} fill="#e7c7a0" stroke={picked ? '#fff' : '#8a6a44'} strokeWidth={picked ? 2 : 1.5} listening={false} />
+        </Group>
+        <Text text={it.label} x={-50} y={r + 4} width={100} align="center" fill="#e6d3b3" fontSize={12} listening={false} />
+      </Group>
+    )
+  }
 
   return (
     // Konva sends a finger as touch events (not mouse events), so every "pick" handler is wired to both.
@@ -227,23 +246,7 @@ export default function StageView({ show, live, width, height, selectedId, selec
           const dragItem = (e: { target: { x: () => number; y: () => number }; currentTarget: unknown }) => {
             if (e.target !== e.currentTarget) return // ignore bubbled drags from child points
             // platforms/stairs sit on a center pivot, so the group position is the center; items store the top-left
-            const dx = it.kind === 'person' ? 0 : it.w / 2
-            const dy = it.kind === 'person' ? 0 : it.h / 2
-            onItemMove(it.id, e.target.x() / s - dx, e.target.y() / s - dy)
-          }
-          if (it.kind === 'person') {
-            const r = personR
-            return (
-              <Group key={it.id} x={it.x * s} y={it.y * s} draggable={editable && !it.locked} onDragMove={dragItem}
-                onMouseDown={() => { onSelect(null); onSelectItem(it.id) }} onTouchStart={() => { onSelect(null); onSelectItem(it.id) }}>
-                {/* top-down figure facing the audience at 0°: shoulders, then head slightly forward. The label never rotates. */}
-                <Group rotation={it.rotation}>
-                  <Ellipse radiusX={r} radiusY={r * 0.55} y={-r * 0.1} fill="#5b7fa8" stroke={picked ? '#fff' : '#1f3550'} strokeWidth={picked ? 3 : 2} />
-                  <Circle radius={r * 0.46} y={r * 0.12} fill="#e7c7a0" stroke={picked ? '#fff' : '#8a6a44'} strokeWidth={picked ? 2 : 1.5} listening={false} />
-                </Group>
-                <Text text={it.label} x={-50} y={r + 4} width={100} align="center" fill="#e6d3b3" fontSize={12} listening={false} />
-              </Group>
-            )
+            onItemMove(it.id, e.target.x() / s - it.w / 2, e.target.y() / s - it.h / 2)
           }
           return (
             <Group key={it.id} x={(it.x + it.w / 2) * s} y={(it.y + it.h / 2) * s} offsetX={(it.w * s) / 2} offsetY={(it.h * s) / 2}
@@ -421,6 +424,8 @@ export default function StageView({ show, live, width, height, selectedId, selec
             </Group>
           )
         })}
+
+        {people.map(drawPerson)}
       </Layer>
 
       {/* Top layer: the selected platform's points and resize handles sit above everything so they can always be grabbed */}
