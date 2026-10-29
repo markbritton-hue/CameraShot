@@ -307,15 +307,16 @@ export default function StageView({ show, live, width, height, selectedId, selec
           const dist = Math.hypot(dx, dy)
           const coneLen = dist + cam.focus.radius * s
           const emphasis = status !== 'idle'
+          const picked = cam.id === selectedId // the camera picked in the list or on the grid: drawn brighter than the rest
           const ptzNow = ptz[cam.id]
           // which of this camera's saved presets the focus circle is sitting on right now, if any
           const here = cam.presets.findIndex((p) => Math.hypot(p.focus.x - cam.focus.x, p.focus.y - cam.focus.y) < 0.05)
           return (
             <Group key={cam.id} opacity={dimmed ? 0.55 : 1}>
               <Wedge x={cx} y={cy} radius={coneLen} angle={cam.fov} rotation={heading - cam.fov / 2}
-                fill={withAlpha(col, status === 'live' ? 0.4 : status === 'preview' ? 0.3 : 0.17)}
-                stroke={withAlpha(col, emphasis ? 0.9 : 0.55)} strokeWidth={emphasis ? 2.5 : 1.5} listening={false} />
-              <Line points={[cx, cy, fx, fy]} stroke={col} strokeWidth={emphasis ? 2 : 1} dash={[6, 6]} listening={false} />
+                fill={withAlpha(col, status === 'live' ? 0.4 : status === 'preview' ? 0.3 : picked ? 0.34 : 0.17)}
+                stroke={withAlpha(col, emphasis || picked ? 1 : 0.55)} strokeWidth={emphasis || picked ? 3 : 1.5} listening={false} />
+              <Line points={[cx, cy, fx, fy]} stroke={col} strokeWidth={emphasis || picked ? 2.5 : 1} dash={[6, 6]} listening={false} />
               {/* where each of this camera's other presets aims: a dot with its P-number */}
               {cam.presets.map((p, i) => (i === here ? null : presetTag(cam.id, p.id, p.focus.x * s, p.focus.y * s, i + 1, ptzNow, true, cam.color)))}
               {/* focus area */}
@@ -325,9 +326,9 @@ export default function StageView({ show, live, width, height, selectedId, selec
                 {/* the big circle is click-through so it never blocks what's underneath; only the center grabs */}
                 {/* Brighter focus area: a stronger tint, a full-strength outline (the old single `opacity` faded the outline
                     along with the fill), and a soft glow in the camera's color. */}
-                <Circle radius={cam.focus.radius * s} fill={withAlpha(col, emphasis ? 0.55 : 0.4)}
-                  stroke={col} strokeWidth={emphasis ? 4 : 2.5} dash={[8, 5]}
-                  shadowColor={col} shadowBlur={emphasis ? 22 : 12} shadowOpacity={0.9} listening={false} />
+                <Circle radius={cam.focus.radius * s} fill={withAlpha(col, emphasis ? 0.55 : picked ? 0.62 : 0.4)}
+                  stroke={col} strokeWidth={emphasis || picked ? 4.5 : 2.5} dash={[8, 5]}
+                  shadowColor={col} shadowBlur={emphasis || picked ? 30 : 12} shadowOpacity={0.9} listening={false} />
                 {/* the grab area for the focus point, big enough for a fingertip. (Comments must sit on their own line inside
                     Konva groups: a space left beside one becomes a text node, which react-konva cannot draw and crashes on.) */}
                 <Circle radius={18} fill="#000" opacity={0.01} />
@@ -342,7 +343,7 @@ export default function StageView({ show, live, width, height, selectedId, selec
                 onDragMove={(e) => onCameraChange(cam.id, { x: e.target.x() / s, y: e.target.y() / s })}
                 onMouseDown={() => onSelect(cam.id)} onTouchStart={() => onSelect(cam.id)}
                 onDblClick={() => onCameraOpen(cam.id)} onDblTap={() => onCameraOpen(cam.id)}>
-                {emphasis && <Circle radius={CAM_R + 12} fill={col} opacity={0.25} listening={false} />}
+                {(emphasis || picked) && <Circle radius={CAM_R + 12} fill={col} opacity={picked ? 0.45 : 0.25} shadowColor={col} shadowBlur={picked ? 24 : 0} listening={false} />}
                 <Circle radius={CAM_R} fill={col} stroke={cam.id === selectedId ? '#fff' : '#0b0e14'} strokeWidth={cam.id === selectedId ? 4 : 2.5} />
                 <Text text={String(cam.number)} x={-CAM_R} y={-12} width={CAM_R * 2} align="center" fontStyle="bold" fontSize={24} fill="#0b0e14" listening={false} />
                 {(() => {

@@ -6,8 +6,22 @@ export interface CameraPreset {
   focus: { x: number; y: number; radius: number }
 }
 
+/** How a PTZ camera's pan / tilt / zoom lines up with the plan, learned by Calibrate (see ptzAim.ts) */
+export interface PtzCal {
+  /** plan heading (degrees, 0 = right, clockwise) the camera looks along at pan 0 */
+  panZero: number
+  /** feet above the floor, worked out from the tilt when calibrating */
+  height: number
+  /** field of view (degrees) at zoom 0 */
+  fovWide: number
+}
+
 export interface Camera {
   id: string
+  /** PTZ: set by Calibrate; lets dragging the cone on the plan aim the real camera */
+  ptzCal?: PtzCal
+  /** PTZ: while on (and calibrated), dragging the focus point or cone also moves the real camera */
+  ptzFollow?: boolean
   /** locked: the camera icon cannot be dragged to a new spot (its focus point and zoom still move) */
   positionLocked?: boolean
   /** hidden: the camera (its icon, cone, focus area and preset tags) is not drawn on the grid; it stays in the list */

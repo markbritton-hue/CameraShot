@@ -289,8 +289,8 @@ const armWatchdog = (t: { host: string; port: number }) => {
   }, WATCHDOG_MS))
 }
 
-app.post<{ Body: { host?: string; action?: string; dir?: string; speed?: number; n?: number } }>('/api/ptz/drive', async (req, reply) => {
-  const { host, action, dir, speed, n } = req.body ?? {}
+app.post<{ Body: { host?: string; action?: string; dir?: string; speed?: number; n?: number; pan?: number; tilt?: number; zoom?: number } }>('/api/ptz/drive', async (req, reply) => {
+  const { host, action, dir, speed, n, pan, tilt, zoom } = req.body ?? {}
   const t = ptzTarget(host)
   if (!t) return reply.code(404).send({ ok: false, error: NOT_CONFIGURED })
   try {
@@ -299,13 +299,14 @@ app.post<{ Body: { host?: string; action?: string; dir?: string; speed?: number;
       case 'zoom': await drive.zoom(t.host, t.port, String(dir), speed); armWatchdog(t); break
       case 'stop': clearTimeout(moveWatchdogs.get(`${t.host}:${t.port}`)); await drive.stop(t.host, t.port); break
       case 'home': await drive.home(t.host, t.port); break
+      case 'goto': await drive.goto(t.host, t.port, { pan, tilt, zoom }); break
       case 'recall':
       case 'store':
         await drive.preset(t.host, t.port, action, n)
         if (action === 'recall') { ptzWatch.noteRecall(t.id); applyStagePreset(t.id, Number(n)) }
         else addSlot(t.id, Number(n)) // saved here, so it is certainly programmed
         break
-      default: return reply.code(400).send({ ok: false, error: 'action must be move, zoom, stop, home, recall or store' })
+      default: return reply.code(400).send({ ok: false, error: 'action must be move, zoom, stop, home, goto, recall or store' })
     }
     return { ok: true }
   } catch (e) {

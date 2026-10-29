@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { aimTargets, defaultShow, normalizeShow } from '../../shared/types'
+import { aim, calibrate } from '../../shared/ptzAim'
 import type { AtemStatus, Camera, CameraPreset, LiveState, PtzStates, ServerMessage, Show, StageItem } from '../../shared/types'
 import StageView, { DEFAULT_PLATFORM_COLOR, LIVE_COLOR, PREVIEW_COLOR } from './StageView'
 import Setup from './Setup'
@@ -206,6 +207,44 @@ export default function App() {
 
   const patchCamera = useCallback((id: string, patch: Partial<Camera>) =>
     update((s) => ({ ...s, cameras: s.cameras.map((c) => (c.id === id ? { ...c, ...patch } : c)) })), [update])
+  // Live follow: while a calibrated PTZ camera has 'move the real camera' on, dragging its focus point or cone aims it too.
+  // At most ~5 moves a second; the last position always gets sent so the camera ends up where the cone is.
+  const followState = useRef(new Map<string, { last: number; timer?: ReturnType<typeof setTimeout> }>())
+  const followCamera = useCallback((cam: Camera) => {
+    if (STATIC_MODE || !cam.ptz || !cam.ip || !cam.ptzFollow || !cam.ptzCal) return
+    const st = followState.current.get(cam.id) ?? { last: 0 }
+    followState.current.set(cam.id, st)
+    const send = () => {
+      st.last = Date.now(); st.timer = undefined
+      void fetch('/api/ptz/drive', { method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ host: cam.ip, action: 'goto', ...aim(cam, cam.ptzCal!, cam.focus.x, cam.focus.y, cam.fov) }) }).catch(() => {})
+    }
+    clearTimeout(st.timer)
+    const wait = 200 - (Date.now() - st.last)
+    if (wait <= 0) send(); else st.timer = setTimeout(send, wait)
+  }, [])
+  const changeCamera = useCallback((id: string, patch: Partial<Camera>) => {
+    patchCamera(id, patch)
+    const cam = show.cameras.find((c) => c.id === id)
+    if (!cam) return
+    const moved = patch.focus !== undefined && (patch.focus.x !== cam.focus.x || patch.focus.y !== cam.focus.y)
+    if (moved || (patch.fov !== undefined && patch.fov !== cam.fov)) followCamera({ ...cam, ...patch })
+  }, [patchCamera, show.cameras, followCamera])
+  // Calibrate: the camera is physically aimed at the plan's focus point right now, so read where it is and remember how that lines up
+  const [calibrating, setCalibrating] = useState('')
+  const calibrateCamera = async (cam: Camera) => {
+    if (!cam.ip) return
+    setCalibrating('reading the camera…')
+    try {
+      const r = await fetch(`/api/ptz/position?host=${encodeURIComponent(cam.ip)}`)
+      const j = await r.json()
+      if (!j.ok) throw new Error(j.error || 'could not read the camera')
+      patchCamera(cam.id, { ptzCal: calibrate(cam, j.position) })
+      setCalibrating('')
+    } catch (e) {
+      setCalibrating(e instanceof Error ? e.message : String(e))
+    }
+  }
   const patchItem = useCallback((id: string, patch: Partial<StageItem>) =>
     update((s) => ({ ...s, items: s.items.map((i) => (i.id === id ? { ...i, ...patch } : i)) })), [update])
   const moveItem = useCallback((id: string, x: number, y: number) => patchItem(id, { x, y }), [patchItem])
@@ -336,7 +375,7 @@ export default function App() {
           </div>
         )}
         <StageView show={show} live={liveShown} width={size.w} height={size.h} selectedId={selectedId} selectedItemId={selectedItemId}
-          editable={!display && !locked} onSelect={selectCamera} onSelectItem={selectItem} onCameraChange={patchCamera} onCameraOpen={setViewCameraId}
+          editable={!display && !locked} onSelect={selectCamera} onSelectItem={selectItem} onCameraChange={changeCamera} onCameraOpen={setViewCameraId}
           ptz={ptz} onPresetChip={recallSlot} onPresetTag={applyPresetTag} onLiveIcon={openLiveWin}
           onItemMove={moveItem} onItemResize={resizeItem} onItemRotate={rotateItem} onPointMove={movePoint} />
 
@@ -376,7 +415,8 @@ export default function App() {
           <h2>Cameras <button onClick={addCamera} disabled={locked}>+ Add</button></h2>
           <ul className="cams">
             {show.cameras.map((c) => (
-              <li key={c.id} className={`${c.id === selectedId ? 'sel' : ''}${c.hidden ? ' cam-hidden' : ''}`} onClick={() => selectCamera(c.id)}>
+              <li key={c.id} className={`${c.id === selectedId ? 'sel' : ''}${c.hidden ? ' cam-hidden' : ''}`} onClick={() => selectCamera(c.id)}
+                title="Double-click to open the camera window" onDoubleClick={() => setViewCameraId(c.id)}>
                 <span className="dot" style={{ background: c.color }} />Cam {c.number} · {c.name}
                 <small>ATEM {c.atemInput}</small>
                 <button className="item-lock cam-eye" aria-pressed={c.hidden !== true}
@@ -399,15 +439,28 @@ export default function App() {
               <label>Aim at
                 <select value="" onChange={(e) => {
                   const t = targets.find((x) => x.key === e.target.value)
-                  if (t) patchCamera(selected.id, { focus: { ...selected.focus, x: t.x, y: t.y } })
+                  if (t) changeCamera(selected.id, { focus: { ...selected.focus, x: t.x, y: t.y } })
                 }}>
                   <option value="">{targets.length ? 'choose a person or point…' : 'add a person or platform point first'}</option>
                   {targets.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
                 </select>
               </label>
-              <label>Zoom (FOV) {selected.fov}° <input type="range" min={10} max={120} value={selected.fov} onChange={(e) => patchCamera(selected.id, { fov: +e.target.value })} /></label>
+              <label>Zoom (FOV) {selected.fov}° <input type="range" min={10} max={120} value={selected.fov} onChange={(e) => changeCamera(selected.id, { fov: +e.target.value })} /></label>
               <label>Focus radius {selected.focus.radius.toFixed(1)} ft <input type="range" min={1} max={16} step={0.5} value={selected.focus.radius} onChange={(e) => patchCamera(selected.id, { focus: { ...selected.focus, radius: +e.target.value } })} /></label>
               <label>Color <input type="color" value={selected.color} onChange={(e) => patchCamera(selected.id, { color: e.target.value })} /></label>
+              {selected.ptz && selected.ip && !STATIC_MODE && (
+                <div className="follow">
+                  <h3>Move the real camera</h3>
+                  <p className="hint">Aim the camera at this plan's focus point (use the camera window), then press Calibrate. After that, dragging the focus point or the cone on the plan moves the camera too.</p>
+                  <div className="row">
+                    <button onClick={() => void calibrateCamera(selected)}>{selected.ptzCal ? 'Recalibrate' : 'Calibrate'}</button>
+                    <label className="check"><input type="checkbox" disabled={!selected.ptzCal} checked={selected.ptzFollow === true}
+                      onChange={(e) => patchCamera(selected.id, { ptzFollow: e.target.checked || undefined })} /> Camera follows the cone</label>
+                  </div>
+                  {calibrating && <p className="hint">{calibrating}</p>}
+                  {selected.ptzCal && !calibrating && <p className="hint">Calibrated (mounted about {selected.ptzCal.height.toFixed(0)} ft up, widest view {selected.ptzCal.fovWide.toFixed(0)}°).</p>}
+                </div>
+              )}
 
               <h3>Presets <button onClick={() => savePreset(selected)}>+ Save current</button></h3>
               {selected.presets.length === 0 && <p className="hint">Aim and zoom the camera, then save it as a preset.</p>}

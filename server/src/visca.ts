@@ -116,6 +116,16 @@ export const drive = {
     setTimeout(() => void stopAll().catch(() => {}), 120)
   },
   home: (host: string, port: number) => fire(host, port, [0x81, 0x01, 0x06, 0x04, 0xff]),
+  /** Absolute pan / tilt (VISCA 06 02) then zoom (04 47). Fire-and-forget so a drag can send many per second. */
+  async goto(host: string, port: number, pose: { pan: unknown; tilt: unknown; zoom: unknown }) {
+    const pan = Number(pose.pan), tilt = Number(pose.tilt), zoom = Number(pose.zoom)
+    if (![pan, tilt, zoom].every(Number.isFinite)) throw new RangeError('pan, tilt and zoom must be numbers')
+    if (Math.abs(pan) > 2448 || tilt < -432 || tilt > 1296 || zoom < 0 || zoom > 0x4000) throw new RangeError('pan, tilt or zoom is outside the camera\'s range')
+    const nib16 = (v: number) => { const u = Math.round(v) & 0xffff; return [(u >> 12) & 0xf, (u >> 8) & 0xf, (u >> 4) & 0xf, u & 0xf] }
+    const z = Math.round(zoom)
+    await fire(host, port, [0x81, 0x01, 0x06, 0x02, 0x0c, 0x0c, ...nib16(pan), ...nib16(tilt), 0xff])
+    await fire(host, port, [0x81, 0x01, 0x04, 0x47, (z >> 12) & 0xf, (z >> 8) & 0xf, (z >> 4) & 0xf, z & 0xf, 0xff])
+  },
   /**
    * The camera's own memory presets (position, zoom, focus): recall moves the camera, store overwrites a slot.
    * Preset N here is VISCA memory N, the same numbering GearOps uses on these cameras.
