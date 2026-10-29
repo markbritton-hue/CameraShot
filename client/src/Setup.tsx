@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { IPV4 } from '../../shared/types'
+import { DEFAULT_VISCA_PORT, IPV4 } from '../../shared/types'
 import type { AtemStatus, Camera, Show } from '../../shared/types'
 import PtzControls from './PtzControls'
 
@@ -158,7 +158,7 @@ export default function Setup({ show, atem, gridLocked, serverAvailable, onClose
             Controls here and the pan/tilt buttons when you double-click the camera on the stage.
           </p>
           <table className="cam-table">
-            <thead><tr><th>Camera</th><th>ATEM input</th><th>IP address</th><th title="Tick for a pan/tilt/zoom camera you want to control from CameraShot">PTZ</th><th /></tr></thead>
+            <thead><tr><th>Camera</th><th>ATEM input</th><th>IP address</th><th title="The camera's VISCA control port (PTZ cameras). Default 1259">Port</th><th title="Tick for a pan/tilt/zoom camera you want to control from CameraShot">PTZ</th><th /></tr></thead>
             <tbody>
               {show.cameras.flatMap((c) => {
                 const ip = c.ip ?? ''
@@ -177,6 +177,12 @@ export default function Setup({ show, atem, gridLocked, serverAvailable, onClose
                         className={ip && !valid ? 'invalid' : ''}
                         onChange={(e) => patchCamera(c.id, { ip: e.target.value.trim() })} />
                     </td>
+                    <td>
+                      {c.ptz ? (
+                        <input type="number" className="port-input" min={1} max={65535} value={c.viscaPort ?? DEFAULT_VISCA_PORT} aria-label={`Camera ${c.number} VISCA port`}
+                          onChange={(e) => { const v = +e.target.value; patchCamera(c.id, { viscaPort: v && v !== DEFAULT_VISCA_PORT ? v : undefined }) }} />
+                      ) : <span className="hint">-</span>}
+                    </td>
                     <td className="ptz-check">
                       <input type="checkbox" checked={!!c.ptz} aria-label={`Camera ${c.number} is a PTZ camera`}
                         onChange={(e) => { patchCamera(c.id, { ptz: e.target.checked }); if (!e.target.checked && controlsFor === c.id) setControlsFor(null) }} />
@@ -193,7 +199,7 @@ export default function Setup({ show, atem, gridLocked, serverAvailable, onClose
                   </tr>,
                   open && (
                     <tr key={`${c.id}-ptz`} className="ptz-row">
-                      <td colSpan={5}>
+                      <td colSpan={6}>
                         <PtzControls host={ip.trim()} port={c.viscaPort} onPort={(p) => patchCamera(c.id, { viscaPort: p })}
                           camNumber={c.number} rtspPath={c.rtspPath} onRtspPath={(p) => patchCamera(c.id, { rtspPath: p })} />
                       </td>

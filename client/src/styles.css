@@ -295,3 +295,4 @@ code { font-size: 11px; word-break: break-all; color: #aab6cc; }
 .side.has-cam .cams li.sel { outline-color: #fff; background: color-mix(in srgb, var(--cam) 38%, #151b27); }
 .side .follow label.check { flex-direction: row; align-items: center; gap: 8px; font-size: 13px; color: #d7deec; }
 .side .follow label.check input { width: auto; }
+.cam-table input.port-input { width: 72px; }

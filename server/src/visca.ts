@@ -7,7 +7,17 @@ import type { PtzSetting, PtzStatus } from '../../shared/types'
  * never be mixed up between requests or cameras.
  *
  * Replies: 90 4z FF ack, 90 5z FF completion, 90 50 ... FF inquiry answer, 90 6z ee FF error.
+ *
+ * Port 52381 is the Sony-style standard VISCA-over-IP port: those cameras want every message wrapped in an 8 byte
+ * header (type, length, sequence number) and wrap their replies the same way, so that is added and stripped here.
  */
+const FRAMED_PORT = 52381
+let sequence = 0
+const frame = (bytes: number[], kind: 'command' | 'inquiry') => {
+  sequence = (sequence + 1) >>> 0
+  return [0x01, kind === 'inquiry' ? 0x10 : 0x00, (bytes.length >> 8) & 0xff, bytes.length & 0xff,
+    (sequence >>> 24) & 0xff, (sequence >>> 16) & 0xff, (sequence >>> 8) & 0xff, sequence & 0xff, ...bytes]
+}
 function exchange(host: string, port: number, bytes: number[], kind: 'command' | 'inquiry', timeoutMs = 1200): Promise<number[]> {
   return new Promise((resolve, reject) => {
     const sock = dgram.createSocket('udp4')
@@ -26,7 +36,8 @@ function exchange(host: string, port: number, bytes: number[], kind: 'command' |
     }, timeoutMs)
     sock.on('error', (e) => finish(e))
     sock.on('message', (m) => {
-      const b = [...m]
+      const b = [...(port === FRAMED_PORT ? m.subarray(8) : m)]
+      if (b.length === 0) return // e.g. the camera's reply to a control message
       const type = (b[1] ?? 0) >> 4
       if (type === 6) {
         const code = b[2]
@@ -37,7 +48,7 @@ function exchange(host: string, port: number, bytes: number[], kind: 'command' |
       if (kind === 'command' && type === 4) acked = true
       if (kind === 'command' && type === 5) finish(null, b)
     })
-    sock.send(Buffer.from(bytes), port, host, (err) => { if (err) finish(err) })
+    sock.send(Buffer.from(port === FRAMED_PORT ? frame(bytes, kind) : bytes), port, host, (err) => { if (err) finish(err) })
   })
 }
 
@@ -49,7 +60,7 @@ function fire(host: string, port: number, bytes: number[]): Promise<void> {
   return new Promise((resolve, reject) => {
     const sock = dgram.createSocket('udp4')
     sock.on('error', () => { /* a lost movement packet is covered by the keep-alive and the stop watchdog */ })
-    sock.send(Buffer.from(bytes), port, host, (err) => {
+    sock.send(Buffer.from(port === FRAMED_PORT ? frame(bytes, 'command') : bytes), port, host, (err) => {
       setTimeout(() => { try { sock.close() } catch { /* already closed */ } }, 400)
       err ? reject(err) : resolve()
     })
@@ -155,7 +166,12 @@ const signed16 = (v: number) => (v & 0x8000 ? v - 0x10000 : v)
 
 /** Where the camera is now: last recalled preset plus absolute pan, tilt and zoom. Read-only. */
 export async function readPosition(host: string, port: number): Promise<PtzPosition> {
-  const preset = (await inquire(host, port, [0x81, 0x09, 0x04, 0x3f, 0xff]))[2] ?? 0
+  // Some cameras (Sony-style ones on port 52381) don't know the 'last preset' inquiry and answer with a syntax error:
+  // treat that as 'unknown' (0). A camera that doesn't answer at all still fails here.
+  const preset = await inquire(host, port, [0x81, 0x09, 0x04, 0x3f, 0xff]).then((r) => r[2] ?? 0, (e: Error) => {
+    if (/rejected the command/.test(e.message)) return 0
+    throw e
+  })
   const pt = await inquire(host, port, [0x81, 0x09, 0x06, 0x12, 0xff])
   const zoom = await inquire(host, port, [0x81, 0x09, 0x04, 0x47, 0xff])
   return { preset, pan: signed16(fromNibbles(pt, 2, 4)), tilt: signed16(fromNibbles(pt, 6, 4)), zoom: fromNibbles(zoom, 2, 4) }
